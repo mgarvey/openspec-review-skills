@@ -19,6 +19,16 @@ Review skills:
 - `review-security`: read-only defensive security review.
 - `final-rereview`: narrow re-review after fixup commits.
 
+OpenSpec workflow skills:
+
+- `openspec-propose`: create a complete OpenSpec change proposal, design, specs,
+  and tasks.
+- `openspec-apply-change`: implement tasks from an active OpenSpec change.
+- `openspec-archive-change`: archive a completed OpenSpec change.
+- `openspec-explore`: exploratory thinking mode for clarifying requirements
+  before or during a change.
+- `openspec-sync-specs`: sync delta specs from an active change into main specs.
+
 ## Repository Layout
 
 ```text
@@ -65,11 +75,13 @@ notes and tradeoffs.
 ## Requirements
 
 - Git and shell access for most review workflows.
-- No required network access.
+- OpenSpec CLI for the `openspec-*` workflow skills.
+- No required network access unless the reviewed repository workflow itself
+  requires it.
 - No bundled secrets or private configuration.
 
-OpenSpec CLI is only needed for maintainers who work on this repository's
-proposal artifacts under `openspec/`.
+OpenSpec CLI is not required to install the skills or use the read-only review
+skills.
 
 ## Release Safety
 
