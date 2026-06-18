@@ -25,16 +25,25 @@ Current Codex documentation says:
 
 Source: <https://developers.openai.com/codex/skills>
 
-Recommended project install:
+Recommended project install for current Codex surfaces:
 
 ```bash
-./scripts/install-skills.sh .codex/skills
 ./scripts/install-skills.sh .agents/skills
 ```
 
+Legacy or existing Codex projects that still load `.codex/skills` can install
+there instead:
+
+```bash
+./scripts/install-skills.sh .codex/skills
+```
+
+Choose one repo-local Codex target per project. Installing the same skills into
+both `.agents/skills` and `.codex/skills` can make the skills appear twice.
+
 The `review-code` skill is installed the same way as the other skills. Its
-canonical source is `skills/review-code`; `.codex/skills/review-code` and
-`.agents/skills/review-code` are activation copies.
+canonical source is `skills/review-code`; `.agents/skills/review-code` or
+`.codex/skills/review-code` is only an activation copy.
 
 Recommended personal install:
 
@@ -83,7 +92,8 @@ reads `.codex/skills`, install there explicitly:
 ```
 
 Treat `.codex/skills`, `.agents/skills`, and `.claude/skills` as install
-targets, not source-of-truth directories.
+targets, not source-of-truth directories. For Codex repo-local installs, use
+only one of `.agents/skills` or `.codex/skills` in the same project.
 
 ## Frontmatter Policy
 
