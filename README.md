@@ -37,26 +37,33 @@ agent-specific location used by your environment.
 
 ## Install
 
-For Codex, install into the skill directory your Codex surface loads. Existing
-Codex projects may use `.codex/skills`; current public documentation also
-describes `.agents/skills`.
+For Codex, install into exactly one repo-local skill directory for a given
+project. Current public documentation describes `.agents/skills`; older or
+existing projects may still load `.codex/skills`. Do not install the same skills
+into both `.agents/skills` and `.codex/skills` in one project, or the skills may
+appear twice.
 
 For Claude Code, current public documentation describes project-scoped skills
 under `.claude/skills` and personal skills under `$HOME/.claude/skills`.
 
-Install all skills into a project with one of:
+Install all skills into a project with one target appropriate for your agent:
 
 ```bash
-./scripts/install-skills.sh .codex/skills
+# Current Codex project target
 ./scripts/install-skills.sh .agents/skills
+
+# Legacy Codex project target, if your environment still loads it
+./scripts/install-skills.sh .codex/skills
+
+# Claude Code project target
 ./scripts/install-skills.sh .claude/skills
 ```
 
 Or copy a single skill manually:
 
 ```bash
-mkdir -p .codex/skills
-cp -R skills/review-code .codex/skills/
+mkdir -p .agents/skills
+cp -R skills/review-code .agents/skills/
 ```
 
 See [docs/compatibility.md](docs/compatibility.md) for current compatibility
