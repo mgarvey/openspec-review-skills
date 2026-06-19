@@ -282,15 +282,152 @@ managed_text_file() {
   [ -f "$path" ] && grep -Fq "$managed_marker" "$path"
 }
 
+legacy_managed_readme_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lower = text.lower()
+normalized = re.sub(r"\s+", " ", lower)
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+has_vendored_file_model = (
+    "real vendored files" in normalized
+    or (
+        "vendored files" in normalized
+        and ("real" in normalized or "copied" in normalized or "committed" in normalized)
+    )
+    or ("committed files" in normalized and ("vendored" in normalized or "copied" in normalized))
+)
+fresh_checkout_note = bool(
+    re.search(r"fresh[- ](clones?|checkouts?|worktrees?)|new (git )?worktrees?", normalized)
+)
+too_large = len(text) > 5000
+project_specific = any(
+    signal in lower
+    for signal in [
+        "local project",
+        "project-specific",
+        "customer",
+        "sku",
+    ]
+)
+
+checks = [
+    bool(lines and lines[0] == "# Managed OpenSpec Review Skills"),
+    "mgarvey/openspec-review-skills" in text,
+    ".agents/skills" in text,
+    has_vendored_file_model,
+    fresh_checkout_note,
+    "submodule" in lower,
+    "symlink" in lower,
+    "startup" in lower or "bootstrap" in lower or "hook" in lower,
+]
+
+raise SystemExit(0 if all(checks) and not too_large and not project_specific else 1)
+PY
+}
+
+legacy_managed_upstream_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lower = text.lower()
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+too_large = len(text) > 5000
+project_specific = any(
+    signal in lower
+    for signal in [
+        "local project",
+        "project-specific",
+        "customer",
+        "sku",
+    ]
+)
+
+checks = [
+    bool(lines and lines[0] == "# OpenSpec Review Skills Upstream"),
+    "mgarvey/openspec-review-skills" in text,
+    bool(re.search(r"\bv[0-9]+\.[0-9]+\.[0-9]+\b", text)),
+    "refresh" in lower and "openspec review skills" in lower,
+    ".agents/vendor/openspec-review-skills" in text,
+    "submodule" in lower,
+    ".codex/skills" in text,
+    "symlink" in lower,
+    "startup" in lower or "bootstrap" in lower or "hook" in lower,
+]
+
+raise SystemExit(0 if all(checks) and not too_large and not project_specific else 1)
+PY
+}
+
+legacy_managed_text_file() {
+  local path="$1"
+  if [ "$path" = "$readme_path" ]; then
+    legacy_managed_readme_file "$path"
+    return
+  fi
+  if [ "$path" = "$upstream_path" ]; then
+    legacy_managed_upstream_file "$path"
+    return
+  fi
+  return 1
+}
+
+legacy_managed_validator_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lower = text.lower()
+
+checks = [
+    "openspec review skills" in lower,
+    ".agents/skills" in text,
+    "skill.md" in lower,
+    "manifest" in lower or ".openspec-review-skills-manifest.json" in text,
+    "symlink" in lower or "real files" in lower or "vendored" in lower,
+    ".agents/vendor/openspec-review-skills" in text,
+    ".gitmodules" in text or ".codex/skills" in text,
+]
+
+project_specific_signals = [
+    "local project",
+    "project-specific",
+    "mysql",
+    "customer",
+    "sku",
+]
+
+too_large = len(text) > 20000
+project_specific = any(signal in lower for signal in project_specific_signals)
+looks_like_shell = bool(re.search(r"^#!.*\b(bash|sh)\b", text, re.MULTILINE))
+
+raise SystemExit(0 if all(checks) and looks_like_shell and not too_large and not project_specific else 1)
+PY
+}
+
 validator_is_managed() {
   local path="$1"
   [ -f "$path" ] || return 1
-  if grep -Fq "$managed_marker" "$path"; then
-    return 0
-  fi
-  grep -Fq "OpenSpec review skills validation passed" "$path" \
-    && grep -Fq ".openspec-review-skills-manifest.json" "$path" \
-    && grep -Fq "vendored rollout must not use a Git submodule" "$path"
+  grep -Fq "$managed_marker" "$path"
 }
 
 gitmodules_declares_legacy_vendor() {
@@ -650,11 +787,20 @@ plan_managed_text_file() {
   local path="$1"
   local content="$2"
   local label="$3"
+  local legacy_label="$4"
   if file_matches_text "$path" "$content"; then
     return
   fi
-  if path_exists "$path" && ! managed_text_file "$path"; then
-    add_conflict "$(rel_path "$path") exists and is not marked as managed; refusing to overwrite"
+  if path_exists "$path"; then
+    if managed_text_file "$path"; then
+      write_if_needed "$path" "$content" "$label"
+      return
+    fi
+    if legacy_managed_text_file "$path"; then
+      write_if_needed "$path" "$content" "$legacy_label"
+      return
+    fi
+    add_conflict "$(rel_path "$path") exists and is not marked as managed or recognized as legacy managed OpenSpec review skills metadata; refusing to overwrite"
     return
   fi
   write_if_needed "$path" "$content" "$label"
@@ -664,8 +810,26 @@ plan_validator() {
   if [ -f "$validator_path" ] && cmp -s "$source_validator" "$validator_path"; then
     return
   fi
-  if path_exists "$validator_path" && ! validator_is_managed "$validator_path"; then
-    add_conflict "$(rel_path "$validator_path") exists and does not look like the managed OpenSpec validator"
+  if path_exists "$validator_path"; then
+    if validator_is_managed "$validator_path"; then
+      if [ "$mode" = "apply" ]; then
+        mkdir -p "$(dirname "$validator_path")"
+        cp "$source_validator" "$validator_path"
+        chmod +x "$validator_path"
+      fi
+      add_action "install or update $(rel_path "$validator_path")"
+      return
+    fi
+    if legacy_managed_validator_file "$validator_path"; then
+      if [ "$mode" = "apply" ]; then
+        mkdir -p "$(dirname "$validator_path")"
+        cp "$source_validator" "$validator_path"
+        chmod +x "$validator_path"
+      fi
+      add_action "replace legacy managed $(rel_path "$validator_path")"
+      return
+    fi
+    add_conflict "$(rel_path "$validator_path") exists and does not look like the managed or legacy managed OpenSpec validator"
     return
   fi
   if [ "$mode" = "apply" ]; then
@@ -771,8 +935,8 @@ plan_empty_legacy_codex_dirs
 plan_openspec_init
 run_installer
 plan_validator
-plan_managed_text_file "$readme_path" "$(desired_readme)" "write managed .agents/skills/README.md"
-plan_managed_text_file "$upstream_path" "$(desired_upstream)" "write managed .agents/skills/UPSTREAM.md"
+plan_managed_text_file "$readme_path" "$(desired_readme)" "write managed .agents/skills/README.md" "replace legacy managed .agents/skills/README.md"
+plan_managed_text_file "$upstream_path" "$(desired_upstream)" "write managed .agents/skills/UPSTREAM.md" "replace legacy managed .agents/skills/UPSTREAM.md"
 
 if [ "${#conflicts[@]}" -gt 0 ]; then
   echo "OpenSpec repo bootstrap conflicts:"

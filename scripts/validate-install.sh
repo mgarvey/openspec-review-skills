@@ -148,6 +148,106 @@ manifest = {
 PY
 }
 
+write_legacy_agent_metadata() {
+  local project="$1"
+  mkdir -p "$project/.agents/skills"
+  cat > "$project/.agents/skills/README.md" <<'EOF'
+# Managed OpenSpec Review Skills
+
+The `.agents/skills` entries in this directory are real vendored files copied
+from `mgarvey/openspec-review-skills`. They are committed files, not symlinks.
+
+Fresh checkouts and fresh worktrees do not require Git submodules, symlinks,
+`.agents/vendor/openspec-review-skills`, or startup/bootstrap hooks for skill
+discovery.
+EOF
+  cat > "$project/.agents/skills/UPSTREAM.md" <<'EOF'
+# OpenSpec Review Skills Upstream
+
+- Upstream repository: mgarvey/openspec-review-skills
+- Upstream tag: v0.1.2
+- Target: .agents/skills
+
+Refresh the OpenSpec review skills by updating from the upstream package and
+committing the refreshed `.agents/skills` files.
+
+Do not add `.agents/vendor/openspec-review-skills`, Git submodules,
+`.codex/skills` duplicates, symlinks, or startup/bootstrap hooks.
+EOF
+}
+
+write_legacy_validator() {
+  local project="$1"
+  mkdir -p "$project/scripts"
+  cat > "$project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+skills_dir="$repo_root/.agents/skills"
+
+[ -d "$skills_dir" ] || fail "missing .agents/skills"
+[ -f "$skills_dir/.openspec-review-skills-manifest.json" ] || fail "missing manifest"
+
+if [ -e "$repo_root/.agents/vendor/openspec-review-skills" ]; then
+  fail "OpenSpec review skills must use real vendored files, not .agents/vendor/openspec-review-skills"
+fi
+
+if [ -f "$repo_root/.gitmodules" ] && grep -Fq "openspec-review-skills" "$repo_root/.gitmodules"; then
+  fail "OpenSpec review skills must not use git submodules"
+fi
+
+if find "$skills_dir" -mindepth 1 -maxdepth 1 -type l -print -quit | grep -q .; then
+  fail "OpenSpec review skills under .agents/skills must not be symlinks"
+fi
+
+for skill in "$skills_dir"/*; do
+  [ -d "$skill" ] || continue
+  [ -f "$skill/SKILL.md" ] || fail "missing SKILL.md in $skill"
+done
+
+if [ -d "$repo_root/.codex/skills" ]; then
+  fail "OpenSpec review skills must not be duplicated in .codex/skills"
+fi
+
+echo "OpenSpec review skills validation passed"
+EOF
+  chmod +x "$project/scripts/validate-openspec-review-skills.sh"
+}
+
+write_current_marker_agent_metadata() {
+  local project="$1"
+  mkdir -p "$project/.agents/skills"
+  cat > "$project/.agents/skills/README.md" <<'EOF'
+# Stale Managed README
+
+<!-- Managed by mgarvey/openspec-review-skills: previous content -->
+
+stale content
+EOF
+  cat > "$project/.agents/skills/UPSTREAM.md" <<'EOF'
+# Stale Managed Upstream
+
+<!-- Managed by mgarvey/openspec-review-skills: previous content -->
+
+stale content
+EOF
+  mkdir -p "$project/scripts"
+  cat > "$project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+# Managed by mgarvey/openspec-review-skills. Refresh with ensure-openspec-repo.
+set -euo pipefail
+
+echo stale validator
+EOF
+  chmod +x "$project/scripts/validate-openspec-review-skills.sh"
+}
+
 target="$tmp_dir/project/.agents/skills"
 mkdir -p "$tmp_dir/project"
 
@@ -243,6 +343,83 @@ git -C "$ensure_project" init -q
   grep -Fq "Source exact tag:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tag status"
   grep -Fq "Source tree state:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tree state"
   "$ensure_bootstrapper" --check --force >/tmp/ensure-check.out
+)
+
+legacy_metadata_home="$tmp_dir/legacy-home"
+legacy_metadata_project="$legacy_metadata_home/Code/legacy-metadata-project"
+mkdir -p "$legacy_metadata_project"
+git -C "$legacy_metadata_project" init -q
+write_legacy_agent_metadata "$legacy_metadata_project"
+write_legacy_validator "$legacy_metadata_project"
+(
+  cd "$legacy_metadata_project"
+  HOME="$legacy_metadata_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-legacy-metadata-plan.out
+  grep -Fq "replace legacy managed .agents/skills/README.md" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed README"
+  grep -Fq "replace legacy managed .agents/skills/UPSTREAM.md" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed UPSTREAM"
+  grep -Fq "replace legacy managed scripts/validate-openspec-review-skills.sh" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed validator"
+  HOME="$legacy_metadata_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply >/tmp/ensure-legacy-metadata-apply.out
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo README -->" .agents/skills/README.md || fail "ensure did not replace legacy managed README with current marker"
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo upstream metadata -->" .agents/skills/UPSTREAM.md || fail "ensure did not replace legacy managed UPSTREAM with current marker"
+  grep -Fq "# Managed by mgarvey/openspec-review-skills. Refresh with ensure-openspec-repo." scripts/validate-openspec-review-skills.sh || fail "ensure did not replace legacy managed validator with current marker"
+)
+
+unknown_readme_project="$tmp_dir/ensure-unknown-readme-project"
+mkdir -p "$unknown_readme_project/.agents/skills"
+git -C "$unknown_readme_project" init -q
+printf '# Project Skill Notes\n\nKeep this local project note.\n' > "$unknown_readme_project/.agents/skills/README.md"
+(
+  cd "$unknown_readme_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-readme.out 2>&1; then
+    fail "ensure allowed unknown README overwrite"
+  fi
+  grep -Fq ".agents/skills/README.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-readme.out || fail "ensure did not explain unknown README refusal"
+)
+
+unknown_upstream_project="$tmp_dir/ensure-unknown-upstream-project"
+mkdir -p "$unknown_upstream_project/.agents/skills"
+git -C "$unknown_upstream_project" init -q
+printf '# Project Upstream Notes\n\nLocal upstream note.\n' > "$unknown_upstream_project/.agents/skills/UPSTREAM.md"
+(
+  cd "$unknown_upstream_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-upstream.out 2>&1; then
+    fail "ensure allowed unknown UPSTREAM overwrite"
+  fi
+  grep -Fq ".agents/skills/UPSTREAM.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-upstream.out || fail "ensure did not explain unknown UPSTREAM refusal"
+)
+
+unknown_validator_project="$tmp_dir/ensure-unknown-validator-project"
+mkdir -p "$unknown_validator_project/scripts"
+git -C "$unknown_validator_project" init -q
+cat > "$unknown_validator_project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "local project validator"
+EOF
+chmod +x "$unknown_validator_project/scripts/validate-openspec-review-skills.sh"
+(
+  cd "$unknown_validator_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-validator.out 2>&1; then
+    fail "ensure allowed unknown validator overwrite"
+  fi
+  grep -Fq "scripts/validate-openspec-review-skills.sh exists and does not look like the managed or legacy managed OpenSpec validator" /tmp/ensure-unknown-validator.out || fail "ensure did not explain unknown validator refusal"
+)
+
+current_marker_metadata_project="$tmp_dir/ensure-current-marker-metadata-project"
+mkdir -p "$current_marker_metadata_project"
+git -C "$current_marker_metadata_project" init -q
+(
+  cd "$current_marker_metadata_project"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/dev/null
+  write_current_marker_agent_metadata "$current_marker_metadata_project"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-current-marker-metadata-plan.out
+  grep -Fq "write managed .agents/skills/README.md" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker README refresh"
+  grep -Fq "write managed .agents/skills/UPSTREAM.md" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker UPSTREAM refresh"
+  grep -Fq "install or update scripts/validate-openspec-review-skills.sh" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker validator refresh"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-current-marker-metadata-apply.out
+  grep -Fq "# Managed OpenSpec Review Skills" .agents/skills/README.md || fail "ensure did not refresh current-marker README"
+  grep -Fq "# OpenSpec Review Skills Upstream" .agents/skills/UPSTREAM.md || fail "ensure did not refresh current-marker UPSTREAM"
+  grep -Fq "OpenSpec review skills validation passed" scripts/validate-openspec-review-skills.sh || fail "ensure did not refresh current-marker validator"
 )
 
 repair_project="$tmp_dir/ensure-repair-project"
