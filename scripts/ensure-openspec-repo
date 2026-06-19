@@ -1,0 +1,619 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+managed_marker="Managed by mgarvey/openspec-review-skills"
+mode="check"
+mode_set=0
+force=0
+
+usage() {
+  cat <<'EOF'
+Usage: ensure-openspec-repo [--check|--apply|--print-plan] [--force]
+
+Install or repair the standard OpenSpec/Codex repo setup from the local
+mgarvey/openspec-review-skills checkout.
+
+Modes:
+  --check       Report drift without modifying files. This is the default.
+  --apply       Modify the current Git repo, then run validation.
+  --print-plan  Print the actions that would be taken without modifying files.
+
+Options:
+  --force       Allow running outside ~/Code. This does not force-overwrite
+                unknown files.
+  -h, --help    Show this help.
+
+The command must be run from inside the downstream Git repository. It installs
+real files under .agents/skills, initializes OpenSpec when openspec/ is missing,
+installs scripts/validate-openspec-review-skills.sh, and writes managed
+.agents/skills/README.md and .agents/skills/UPSTREAM.md.
+
+It never uses .codex/skills, Git submodules, startup hooks, or symlinked
+.agents/skills entries.
+EOF
+}
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+warn() {
+  echo "warning: $*" >&2
+}
+
+set_mode() {
+  if [ "$mode_set" -ne 0 ]; then
+    die "choose only one mode"
+  fi
+  mode="$1"
+  mode_set=1
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check)
+      set_mode "check"
+      ;;
+    --apply)
+      set_mode "apply"
+      ;;
+    --print-plan)
+      set_mode "print-plan"
+      ;;
+    --force)
+      force=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown option: $1"
+      ;;
+  esac
+  shift
+done
+
+resolve_script_path() {
+  local path="$1"
+  local dir target
+  while [ -L "$path" ]; do
+    dir="$(cd "$(dirname "$path")" && pwd -P)"
+    target="$(readlink "$path")"
+    case "$target" in
+      /*)
+        path="$target"
+        ;;
+      *)
+        path="$dir/$target"
+        ;;
+    esac
+  done
+  printf '%s/%s\n' "$(cd "$(dirname "$path")" && pwd -P)" "$(basename "$path")"
+}
+
+script_path="$(resolve_script_path "${BASH_SOURCE[0]}")"
+script_dir="$(cd "$(dirname "$script_path")" && pwd -P)"
+source_repo="$(cd "$script_dir/.." && pwd -P)"
+source_skills="$source_repo/skills"
+source_manifest="$source_repo/skills-manifest.json"
+source_installer="$source_repo/scripts/install-skills.sh"
+source_validator="$source_repo/templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh"
+
+[ -d "$source_skills" ] || die "missing source skills directory: $source_skills"
+[ -f "$source_manifest" ] || die "missing source manifest: $source_manifest"
+[ -x "$source_installer" ] || die "missing executable installer: $source_installer"
+[ -f "$source_validator" ] || die "missing downstream validator template: $source_validator"
+command -v python3 >/dev/null 2>&1 || die "python3 is required"
+
+target_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$target_root" ] || die "run this command from inside a Git worktree"
+target_root="$(cd "$target_root" && pwd -P)"
+
+if [ "$target_root" = "$source_repo" ]; then
+  die "refusing to bootstrap the openspec-review-skills source repository itself"
+fi
+
+home_dir="${HOME:-}"
+[ -n "$home_dir" ] || die "HOME is not set"
+if [ -d "$home_dir/Code" ]; then
+  code_root="$(cd "$home_dir/Code" && pwd -P)"
+else
+  code_root="$home_dir/Code"
+fi
+
+case "$target_root" in
+  "$code_root"|"$code_root"/*)
+    ;;
+  *)
+    if [ "$force" -ne 1 ]; then
+      die "refusing to run outside ~/Code without --force: $target_root"
+    fi
+    ;;
+esac
+
+skills_dir="$target_root/.agents/skills"
+validator_path="$target_root/scripts/validate-openspec-review-skills.sh"
+legacy_vendor="$target_root/.agents/vendor/openspec-review-skills"
+gitmodules_path="$target_root/.gitmodules"
+openspec_dir="$target_root/openspec"
+readme_path="$skills_dir/README.md"
+upstream_path="$skills_dir/UPSTREAM.md"
+source_commit="$(git -C "$source_repo" rev-parse HEAD 2>/dev/null || true)"
+source_url="https://github.com/mgarvey/openspec-review-skills"
+
+managed_names=()
+while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  managed_names+=("$name")
+done < <(python3 - "$source_manifest" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if data.get("package") != "mgarvey/openspec-review-skills":
+    raise SystemExit("source manifest package mismatch")
+for skill in data.get("skills", []):
+    name = skill.get("name")
+    if isinstance(name, str) and name:
+        print(name)
+PY
+)
+
+[ "${#managed_names[@]}" -gt 0 ] || die "no managed skills found in $source_manifest"
+
+actions=()
+conflicts=()
+legacy_symlink_count=0
+
+add_action() {
+  actions+=("$1")
+}
+
+add_conflict() {
+  conflicts+=("$1")
+}
+
+path_exists() {
+  [ -e "$1" ] || [ -L "$1" ]
+}
+
+rel_path() {
+  local path="$1"
+  case "$path" in
+    "$target_root"/*)
+      printf '%s\n' "${path#"$target_root"/}"
+      ;;
+    "$target_root")
+      printf '.\n'
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
+}
+
+desired_readme() {
+  cat <<EOF
+# Managed OpenSpec Review Skills
+
+<!-- $managed_marker: ensure-openspec-repo README -->
+
+The skill directories in this folder are committed vendored files from
+\`mgarvey/openspec-review-skills\`. They are real files, not Git submodules and
+not symlinks, so fresh clones and new Git worktrees can discover them without
+extra setup.
+
+Do not edit managed skill files locally. Update
+\`mgarvey/openspec-review-skills\`, then refresh this repo with:
+
+\`\`\`bash
+ensure-openspec-repo --apply
+\`\`\`
+
+Validate the local wiring with:
+
+\`\`\`bash
+bash scripts/validate-openspec-review-skills.sh
+\`\`\`
+
+Do not add duplicate managed copies under \`.codex/skills\`.
+EOF
+}
+
+desired_upstream() {
+  cat <<EOF
+# OpenSpec Review Skills Upstream
+
+<!-- $managed_marker: ensure-openspec-repo upstream metadata -->
+
+- Package: mgarvey/openspec-review-skills
+- Source repository: $source_url
+- Source commit: ${source_commit:-unknown}
+- Target: .agents/skills
+- Refresh command: ensure-openspec-repo --apply
+
+This repo should use vendored real files only. Do not use Git submodules,
+symlinks, .codex/skills duplicates, or startup/bootstrap hooks for these managed
+skills.
+EOF
+}
+
+write_if_needed() {
+  local path="$1"
+  local content="$2"
+  local description="$3"
+  local dir
+  dir="$(dirname "$path")"
+  if [ "$mode" = "apply" ]; then
+    mkdir -p "$dir"
+    printf '%s\n' "$content" > "$path"
+  fi
+  add_action "$description"
+}
+
+file_matches_text() {
+  local path="$1"
+  local content="$2"
+  [ -f "$path" ] || return 1
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s\n' "$content" > "$tmp"
+  if cmp -s "$path" "$tmp"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+managed_text_file() {
+  local path="$1"
+  [ -f "$path" ] && grep -Fq "$managed_marker" "$path"
+}
+
+validator_is_managed() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  if grep -Fq "$managed_marker" "$path"; then
+    return 0
+  fi
+  grep -Fq "OpenSpec review skills validation passed" "$path" \
+    && grep -Fq ".openspec-review-skills-manifest.json" "$path" \
+    && grep -Fq "vendored rollout must not use a Git submodule" "$path"
+}
+
+vendor_is_managed() {
+  local path="$1"
+  if [ -L "$path" ]; then
+    return 0
+  fi
+  [ -d "$path" ] || return 1
+  if [ -f "$path/skills-manifest.json" ] && python3 - "$path/skills-manifest.json" <<'PY' >/dev/null 2>&1
+import json
+import sys
+from pathlib import Path
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if data.get("package") == "mgarvey/openspec-review-skills" else 1)
+PY
+  then
+    return 0
+  fi
+  if git -C "$path" remote get-url origin 2>/dev/null | grep -Fq "openspec-review-skills"; then
+    return 0
+  fi
+  return 1
+}
+
+skill_tree_matches_source() {
+  local source_path="$1"
+  local target_path="$2"
+  [ -d "$source_path" ] || return 1
+  [ -d "$target_path" ] || return 1
+  [ ! -L "$target_path" ] || return 1
+  python3 - "$source_path" "$target_path" <<'PY'
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+def digest(root: Path) -> str:
+    h = hashlib.sha256()
+    for current, dirs, files in os.walk(root):
+        dirs.sort()
+        files.sort()
+        current_path = Path(current)
+        for dirname in list(dirs):
+            path = current_path / dirname
+            rel = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                h.update(b"L\0")
+                h.update(rel.encode())
+                h.update(b"\0")
+                h.update(os.readlink(path).encode())
+                h.update(b"\0")
+                dirs.remove(dirname)
+        for filename in files:
+            path = current_path / filename
+            rel = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                h.update(b"L\0")
+                h.update(rel.encode())
+                h.update(b"\0")
+                h.update(os.readlink(path).encode())
+                h.update(b"\0")
+            else:
+                h.update(b"F\0")
+                h.update(rel.encode())
+                h.update(b"\0")
+                h.update(path.read_bytes())
+                h.update(b"\0")
+    return h.hexdigest()
+
+raise SystemExit(0 if digest(Path(sys.argv[1])) == digest(Path(sys.argv[2])) else 1)
+PY
+}
+
+remove_legacy_gitmodules_sections() {
+  [ -f "$gitmodules_path" ] || return 0
+  python3 - "$gitmodules_path" "$mode" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+mode = sys.argv[2]
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+out = []
+section = []
+removed = False
+
+def is_section(line: str) -> bool:
+    return line.lstrip().startswith("[") and line.rstrip().endswith("]")
+
+def flush(block):
+    global removed
+    text = "".join(block)
+    if block and block[0].lstrip().startswith("[submodule ") and "openspec-review-skills" in text:
+        removed = True
+        return
+    out.extend(block)
+
+for line in lines:
+    if is_section(line):
+        flush(section)
+        section = [line]
+    else:
+        section.append(line)
+flush(section)
+
+if removed and mode == "apply":
+    path.write_text("".join(out), encoding="utf-8")
+print("removed" if removed else "unchanged")
+PY
+}
+
+plan_legacy_symlinks() {
+  local name link target expected_target
+  for name in "${managed_names[@]}"; do
+    link="$skills_dir/$name"
+    if [ -L "$link" ]; then
+      target="$(readlink "$link")"
+      expected_target="../vendor/openspec-review-skills/skills/$name"
+      if [ "$target" = "$expected_target" ]; then
+        legacy_symlink_count=$((legacy_symlink_count + 1))
+        if [ "$mode" = "apply" ]; then
+          rm -f "$link"
+        fi
+        add_action "remove legacy managed symlink $(rel_path "$link")"
+      else
+        add_conflict "$(rel_path "$link") is a symlink, but not a known managed OpenSpec review skill symlink"
+      fi
+    fi
+  done
+}
+
+plan_legacy_codex_duplicates() {
+  local name legacy source_path
+  for name in "${managed_names[@]}"; do
+    legacy="$target_root/.codex/skills/$name"
+    source_path="$source_skills/$name"
+    if path_exists "$legacy"; then
+      if skill_tree_matches_source "$source_path" "$legacy"; then
+        if [ "$mode" = "apply" ]; then
+          rm -rf "$legacy"
+        fi
+        add_action "remove managed duplicate $(rel_path "$legacy")"
+      else
+        add_conflict "$(rel_path "$legacy") exists but does not match the managed source copy; remove or back it up manually"
+      fi
+    fi
+  done
+}
+
+plan_empty_legacy_codex_dirs() {
+  local skills_legacy="$target_root/.codex/skills"
+  local codex_legacy="$target_root/.codex"
+  if [ -d "$skills_legacy" ] && [ -z "$(find "$skills_legacy" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    if [ "$mode" = "apply" ]; then
+      rmdir "$skills_legacy"
+    fi
+    add_action "remove empty legacy .codex/skills directory"
+  fi
+  if [ -d "$codex_legacy" ] && [ -z "$(find "$codex_legacy" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    if [ "$mode" = "apply" ]; then
+      rmdir "$codex_legacy"
+    fi
+    add_action "remove empty legacy .codex directory"
+  fi
+}
+
+plan_managed_text_file() {
+  local path="$1"
+  local content="$2"
+  local label="$3"
+  if file_matches_text "$path" "$content"; then
+    return
+  fi
+  if path_exists "$path" && ! managed_text_file "$path"; then
+    add_conflict "$(rel_path "$path") exists and is not marked as managed; refusing to overwrite"
+    return
+  fi
+  write_if_needed "$path" "$content" "$label"
+}
+
+plan_validator() {
+  if [ -f "$validator_path" ] && cmp -s "$source_validator" "$validator_path"; then
+    return
+  fi
+  if path_exists "$validator_path" && ! validator_is_managed "$validator_path"; then
+    add_conflict "$(rel_path "$validator_path") exists and does not look like the managed OpenSpec validator"
+    return
+  fi
+  if [ "$mode" = "apply" ]; then
+    mkdir -p "$(dirname "$validator_path")"
+    cp "$source_validator" "$validator_path"
+    chmod +x "$validator_path"
+  fi
+  add_action "install or update $(rel_path "$validator_path")"
+}
+
+plan_gitmodules_cleanup() {
+  if [ -f "$gitmodules_path" ] && grep -Fq "openspec-review-skills" "$gitmodules_path"; then
+    result="$(remove_legacy_gitmodules_sections)"
+    if [ "$result" = "removed" ]; then
+      add_action "remove openspec-review-skills submodule section from .gitmodules"
+    else
+      add_conflict ".gitmodules references openspec-review-skills outside a recognizable submodule section"
+    fi
+  fi
+}
+
+plan_vendor_cleanup() {
+  if path_exists "$legacy_vendor"; then
+    if vendor_is_managed "$legacy_vendor"; then
+      if [ "$mode" = "apply" ]; then
+        rm -rf "$legacy_vendor"
+      fi
+      add_action "remove legacy $(rel_path "$legacy_vendor")"
+    else
+      add_conflict "$(rel_path "$legacy_vendor") exists but is not recognizable as the managed legacy vendor checkout"
+    fi
+  fi
+}
+
+plan_openspec_init() {
+  if [ ! -d "$openspec_dir" ]; then
+    if [ "$mode" = "apply" ]; then
+      command -v openspec >/dev/null 2>&1 || die "openspec is required to initialize this repo"
+      (
+        cd "$target_root"
+        openspec init --tools codex
+      )
+    fi
+    add_action "initialize OpenSpec with openspec init --tools codex"
+  fi
+}
+
+run_installer() {
+  if [ "$mode" = "apply" ]; then
+    (
+      cd "$target_root"
+      "$source_installer" --codex-current
+    )
+    add_action "install/update real managed skill files under .agents/skills"
+  else
+    installer_output="$(
+      cd "$target_root"
+      "$source_installer" --dry-run --codex-current 2>&1
+    )" || {
+      if [ "$legacy_symlink_count" -gt 0 ] && printf '%s\n' "$installer_output" | grep -Fq "symlink collision"; then
+        add_action "install/update real managed skill files under .agents/skills"
+        return
+      fi
+      printf '%s\n' "$installer_output" >&2
+      add_conflict "skill installer dry-run failed"
+      return
+    }
+    if printf '%s\n' "$installer_output" | grep -Eq '^(install|backup|prune) '; then
+      add_action "install/update real managed skill files under .agents/skills"
+    fi
+  fi
+}
+
+run_validation() {
+  (
+    cd "$target_root"
+    bash scripts/validate-openspec-review-skills.sh
+  )
+}
+
+if [ "$mode" = "apply" ] && [ "${ENSURE_OPENSPEC_REPO_PREFLIGHT:-0}" != "1" ]; then
+  preflight_args=(--print-plan)
+  if [ "$force" -eq 1 ]; then
+    preflight_args+=(--force)
+  fi
+  ENSURE_OPENSPEC_REPO_PREFLIGHT=1 "$script_path" "${preflight_args[@]}" >/dev/null
+fi
+
+if [ "$mode" = "apply" ] && [ ! -d "$openspec_dir" ]; then
+  command -v openspec >/dev/null 2>&1 || die "openspec is required to initialize this repo"
+fi
+
+plan_vendor_cleanup
+plan_gitmodules_cleanup
+plan_legacy_symlinks
+plan_legacy_codex_duplicates
+plan_empty_legacy_codex_dirs
+plan_openspec_init
+run_installer
+plan_validator
+plan_managed_text_file "$readme_path" "$(desired_readme)" "write managed .agents/skills/README.md"
+plan_managed_text_file "$upstream_path" "$(desired_upstream)" "write managed .agents/skills/UPSTREAM.md"
+
+if [ "${#conflicts[@]}" -gt 0 ]; then
+  echo "OpenSpec repo bootstrap conflicts:"
+  for conflict in "${conflicts[@]}"; do
+    echo "  - $conflict"
+  done
+  exit 1
+fi
+
+case "$mode" in
+  print-plan)
+    echo "OpenSpec repo bootstrap plan for $target_root:"
+    if [ "${#actions[@]}" -eq 0 ]; then
+      echo "  - no changes needed"
+    else
+      for action in "${actions[@]}"; do
+        echo "  - $action"
+      done
+    fi
+    ;;
+  check)
+    echo "OpenSpec repo bootstrap check for $target_root:"
+    if [ "${#actions[@]}" -eq 0 ]; then
+      if path_exists "$validator_path"; then
+        run_validation
+      fi
+      echo "  - no drift detected"
+      exit 0
+    fi
+    for action in "${actions[@]}"; do
+      echo "  - drift: $action"
+    done
+    exit 1
+    ;;
+  apply)
+    run_validation
+    echo "OpenSpec repo bootstrap applied for $target_root:"
+    if [ "${#actions[@]}" -eq 0 ]; then
+      echo "  - no changes needed"
+    else
+      for action in "${actions[@]}"; do
+        echo "  - $action"
+      done
+    fi
+    ;;
+esac

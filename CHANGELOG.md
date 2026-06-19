@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `ensure-openspec-repo` for safe repo-local OpenSpec/Codex bootstrap and
+  repair using vendored real `.agents/skills` files.
 - Refine skill routing so focused review skills handle ordinary PR, proposal,
   evidence, security, and fixup-review requests.
 - Make `review-code` an explicit-only multi-lens review suite for final

@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 downstream_validator_template="$repo_root/templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh"
+ensure_bootstrapper="$repo_root/scripts/ensure-openspec-repo"
 
 fail() {
   echo "error: $*" >&2
@@ -63,6 +64,24 @@ expect_downstream_validator_failure() {
   fi
 }
 
+install_mock_openspec() {
+  local bin_dir="$1"
+  mkdir -p "$bin_dir"
+  cat > "$bin_dir/openspec" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+[ "${1:-}" = "init" ] || {
+  echo "unexpected openspec command: $*" >&2
+  exit 2
+}
+
+mkdir -p openspec/changes openspec/specs
+printf '# OpenSpec\n' > openspec/README.md
+EOF
+  chmod +x "$bin_dir/openspec"
+}
+
 target="$tmp_dir/project/.agents/skills"
 mkdir -p "$tmp_dir/project"
 
@@ -80,6 +99,8 @@ for skill in "$repo_root"/skills/*; do
 done
 [ -f "$target/.openspec-review-skills-manifest.json" ] || fail "missing install manifest"
 assert_manifest_has "$target/.openspec-review-skills-manifest.json" "review-pr"
+grep -Fq "https://github.com/mgarvey/openspec-review-skills" "$target/.openspec-review-skills-manifest.json" || fail "install manifest missing public source description"
+! grep -Fq "$repo_root" "$target/.openspec-review-skills-manifest.json" || fail "install manifest leaked local source path"
 run_downstream_validator "$tmp_dir/project"
 
 symlink_project="$tmp_dir/symlink-project"
@@ -132,6 +153,53 @@ mkdir -p "$legacy_project"
 mkdir -p "$legacy_project/.codex/skills"
 cp -R "$repo_root/skills/review-pr" "$legacy_project/.codex/skills/review-pr"
 expect_downstream_validator_failure "$legacy_project" ".codex/skills/review-pr exists"
+
+mock_bin="$tmp_dir/bin"
+install_mock_openspec "$mock_bin"
+
+ensure_project="$tmp_dir/ensure-project"
+mkdir -p "$ensure_project"
+git -C "$ensure_project" init -q
+(
+  cd "$ensure_project"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-plan.out
+  grep -q "initialize OpenSpec" /tmp/ensure-plan.out || fail "ensure print-plan did not include OpenSpec initialization"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-apply.out
+  [ -d openspec ] || fail "ensure did not initialize openspec"
+  [ -f .agents/skills/review-pr/SKILL.md ] || fail "ensure did not install review-pr"
+  [ ! -L .agents/skills/review-pr ] || fail "ensure installed review-pr as a symlink"
+  [ -f scripts/validate-openspec-review-skills.sh ] || fail "ensure did not install validator"
+  [ -f .agents/skills/README.md ] || fail "ensure did not install skills README"
+  [ -f .agents/skills/UPSTREAM.md ] || fail "ensure did not install upstream metadata"
+  "$ensure_bootstrapper" --check --force >/tmp/ensure-check.out
+)
+
+repair_project="$tmp_dir/ensure-repair-project"
+mkdir -p "$repair_project"
+git -C "$repair_project" init -q
+(
+  cd "$repair_project"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/dev/null
+  mkdir -p .agents/vendor/openspec-review-skills
+  cp "$repo_root/skills-manifest.json" .agents/vendor/openspec-review-skills/skills-manifest.json
+  rm -rf .agents/skills/review-pr
+  ln -s ../vendor/openspec-review-skills/skills/review-pr .agents/skills/review-pr
+  mkdir -p .codex/skills
+  cp -R "$repo_root/skills/review-pr" .codex/skills/review-pr
+  cat > .gitmodules <<'EOF'
+[submodule ".agents/vendor/openspec-review-skills"]
+	path = .agents/vendor/openspec-review-skills
+	url = https://github.com/mgarvey/openspec-review-skills
+EOF
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-repair.out
+  [ ! -e .agents/vendor/openspec-review-skills ] || fail "ensure did not remove legacy vendor checkout"
+  [ ! -L .agents/skills/review-pr ] || fail "ensure did not replace legacy review-pr symlink"
+  [ -f .agents/skills/review-pr/SKILL.md ] || fail "ensure did not restore review-pr after symlink removal"
+  [ ! -e .codex/skills/review-pr ] || fail "ensure did not remove managed .codex duplicate"
+  [ ! -d .codex/skills ] || fail "ensure left empty legacy .codex/skills directory"
+  ! grep -Fq "openspec-review-skills" .gitmodules || fail "ensure did not remove legacy .gitmodules section"
+  bash scripts/validate-openspec-review-skills.sh >/tmp/ensure-repair-validate.out
+)
 
 (
   cd "$tmp_dir/project"

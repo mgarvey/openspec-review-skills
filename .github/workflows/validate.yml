@@ -21,7 +21,7 @@ jobs:
       - name: Syntax check shell scripts
         shell: bash
         run: |
-          mapfile -t shell_scripts < <(find scripts templates -type f -name '*.sh' | sort)
+          mapfile -t shell_scripts < <(find scripts templates -type f \( -name '*.sh' -o -name 'ensure-openspec-repo' \) | sort)
           for script in "${shell_scripts[@]}"; do
             bash -n "$script"
           done
@@ -34,5 +34,5 @@ jobs:
       - name: ShellCheck shell scripts
         shell: bash
         run: |
-          mapfile -t shell_scripts < <(find scripts templates -type f -name '*.sh' | sort)
+          mapfile -t shell_scripts < <(find scripts templates -type f \( -name '*.sh' -o -name 'ensure-openspec-repo' \) | sort)
           shellcheck "${shell_scripts[@]}"

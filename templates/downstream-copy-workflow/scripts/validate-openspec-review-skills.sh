@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Managed by mgarvey/openspec-review-skills. Refresh with ensure-openspec-repo.
 set -euo pipefail
 
 fail() {

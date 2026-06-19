@@ -536,7 +536,7 @@ write_manifest() {
   local entries_file="$target_dir/.openspec-review-skills-manifest.entries.tmp"
   local source_commit source_description installed_at name path checksum
   source_commit="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
-  source_description="$repo_root"
+  source_description="https://github.com/mgarvey/openspec-review-skills"
   installed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   : > "$entries_file"
   for name in "${previous_names[@]}"; do

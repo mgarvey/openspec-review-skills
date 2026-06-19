@@ -92,6 +92,26 @@ delete, overwrite, or install these skills. Do not use hooks to keep
 checks. Skill updates should arrive through pull requests that update the
 vendored files.
 
+## Repo Bootstrapper
+
+`scripts/ensure-openspec-repo` is the safe repo bootstrapper for downstream Git
+repositories. Put this repository's `scripts/` directory on your `PATH`, or run
+it by absolute path from inside the target repo:
+
+```bash
+ensure-openspec-repo --check
+ensure-openspec-repo --print-plan
+ensure-openspec-repo --apply
+```
+
+The command refuses to run outside a Git worktree, and refuses to run outside
+`~/Code` unless `--force` is passed. `--apply` initializes OpenSpec when
+`openspec/` is missing, installs real files under `.agents/skills`, installs the
+downstream validator, writes managed `.agents/skills/README.md` and
+`.agents/skills/UPSTREAM.md`, removes only known managed legacy rollout paths,
+cleans the matching legacy `.gitmodules` submodule section, and then runs
+validation.
+
 See [docs/compatibility.md](docs/compatibility.md) for current compatibility
 notes and tradeoffs.
 
@@ -101,6 +121,7 @@ notes and tradeoffs.
 python3 scripts/validate-skills.py
 bash scripts/validate-install.sh
 bash -n scripts/install-skills.sh
+bash -n scripts/ensure-openspec-repo
 bash -n templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh
 ```
 

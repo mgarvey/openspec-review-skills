@@ -22,7 +22,14 @@ The workflow does not run `--prune`, so unrelated local skills are not touched.
 ## Initial Vendoring
 
 Copy this template's files into the downstream repository, then install the
-current managed skills from this upstream package:
+current managed skills from this upstream package. If `ensure-openspec-repo` is
+on your `PATH`, use:
+
+```bash
+ensure-openspec-repo --apply
+```
+
+Otherwise run the installer directly:
 
 ```bash
 tmp_dir="$(mktemp -d)"
@@ -53,3 +60,19 @@ git add .agents/skills
 
 Review refresh pull requests as prompt/instruction supply-chain updates, the
 same way you would review code changes.
+
+## Repairing Existing Repos
+
+From inside a downstream Git repo, run:
+
+```bash
+ensure-openspec-repo --check
+ensure-openspec-repo --print-plan
+ensure-openspec-repo --apply
+```
+
+The bootstrapper refuses to overwrite unknown files. It only removes known
+managed legacy rollout paths, including the old
+`.agents/vendor/openspec-review-skills` checkout, old managed symlinks under
+`.agents/skills`, the matching old `.gitmodules` submodule section, and managed
+duplicate `.codex/skills` review-skill copies.
