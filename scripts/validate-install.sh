@@ -155,24 +155,69 @@ write_legacy_agent_metadata() {
 # Managed OpenSpec Review Skills
 
 The `.agents/skills` entries in this directory are real vendored files copied
-from `mgarvey/openspec-review-skills`. They are committed files, not symlinks.
+from `mgarvey/openspec-review-skills`. They are real files under
+`.agents/skills`, not a Git submodule or symlink layer.
 
-Fresh checkouts and fresh worktrees do not require Git submodules, symlinks,
-`.agents/vendor/openspec-review-skills`, or startup/bootstrap hooks for skill
-discovery.
+Fresh checkouts and fresh worktrees do not require Git submodule initialization,
+symlinks, `.agents/vendor/openspec-review-skills`, or startup/bootstrap hooks
+for skill discovery.
+
+`.codex/skills` is legacy and must not contain duplicate managed review-skill
+copies.
 EOF
   cat > "$project/.agents/skills/UPSTREAM.md" <<'EOF'
 # OpenSpec Review Skills Upstream
 
 - Upstream repository: mgarvey/openspec-review-skills
 - Upstream tag: v0.1.2
+- Upstream commit: example-upstream-commit
+- Copy date: 2026-01-01
 - Target: .agents/skills
 
 Refresh the OpenSpec review skills by updating from the upstream package and
 committing the refreshed `.agents/skills` files.
 
-Do not add `.agents/vendor/openspec-review-skills`, Git submodules,
-`.codex/skills` duplicates, symlinks, or startup/bootstrap hooks.
+`.agents/docs/read-only-discovery.md` was also vendored from the same upstream
+tag because the review skills reference `../../docs/read-only-discovery.md`.
+EOF
+}
+
+write_legacy_support_doc() {
+  local project="$1"
+  mkdir -p "$project/.agents/docs"
+  cat > "$project/.agents/docs/read-only-discovery.md" <<'EOF'
+# Read-only Discovery
+
+Use repository-provided wrappers and local instructions first. These commands
+are optional starting points when shell access is available and the repository
+does not provide a clearer review command.
+
+## Common Commands
+
+```bash
+git status --short
+git branch --show-current
+git log --oneline --decorate -n 20
+git diff --stat main...HEAD
+git diff --name-only main...HEAD
+git diff main...HEAD
+find . -name AGENTS.md -o -name CLAUDE.md -o -name README.md -o -name CONTRIBUTING.md
+```
+
+If the default branch is not `main`, infer it with Git where possible and
+substitute that branch in the diff commands.
+
+```bash
+git symbolic-ref --quiet --short refs/remotes/origin/HEAD
+```
+
+## Boundaries
+
+- Prefer repo-provided wrappers over invented commands.
+- Do not run destructive commands.
+- Do not run deployment, migration, archive, delete, or cleanup commands during
+  review.
+- Keep command output tied to the review target and requested decision.
 EOF
 }
 
@@ -190,10 +235,14 @@ fail() {
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 skills_dir="$repo_root/.agents/skills"
+support_doc="$repo_root/.agents/docs/read-only-discovery.md"
 
 [ -d "$skills_dir" ] || fail "missing .agents/skills"
 [ -f "$skills_dir/.openspec-review-skills-manifest.json" ] || fail "missing manifest"
+[ -f "$skills_dir/UPSTREAM.md" ] || fail "missing .agents/skills/UPSTREAM.md"
 grep -Fq "mgarvey/openspec-review-skills" "$skills_dir/.openspec-review-skills-manifest.json" || fail "manifest package is not mgarvey/openspec-review-skills"
+[ -f "$support_doc" ] || fail "missing .agents/docs/read-only-discovery.md"
+[ ! -L "$support_doc" ] || fail ".agents/docs/read-only-discovery.md must not be a symlink"
 
 if [ -e "$repo_root/.agents/vendor/openspec-review-skills" ]; then
   fail "OpenSpec review skills must use real vendored files, not .agents/vendor/openspec-review-skills"
@@ -247,6 +296,14 @@ set -euo pipefail
 echo stale validator
 EOF
   chmod +x "$project/scripts/validate-openspec-review-skills.sh"
+  mkdir -p "$project/.agents/docs"
+  cat > "$project/.agents/docs/read-only-discovery.md" <<'EOF'
+# Stale Managed Support Doc
+
+<!-- Managed by mgarvey/openspec-review-skills: previous content -->
+
+stale content
+EOF
 }
 
 target="$tmp_dir/project/.agents/skills"
@@ -268,6 +325,9 @@ done
 assert_manifest_has "$target/.openspec-review-skills-manifest.json" "review-pr"
 grep -Fq "https://github.com/mgarvey/openspec-review-skills" "$target/.openspec-review-skills-manifest.json" || fail "install manifest missing public source description"
 ! grep -Fq "$repo_root" "$target/.openspec-review-skills-manifest.json" || fail "install manifest leaked local source path"
+[ -f "$tmp_dir/project/.agents/docs/read-only-discovery.md" ] || fail "install omitted read-only discovery support doc"
+[ ! -L "$tmp_dir/project/.agents/docs/read-only-discovery.md" ] || fail "install wrote support doc as a symlink"
+grep -Fq "Managed by mgarvey/openspec-review-skills" "$tmp_dir/project/.agents/docs/read-only-discovery.md" || fail "support doc missing managed marker"
 run_downstream_validator "$tmp_dir/project"
 
 symlink_project="$tmp_dir/symlink-project"
@@ -321,6 +381,15 @@ mkdir -p "$legacy_project/.codex/skills"
 cp -R "$repo_root/skills/review-pr" "$legacy_project/.codex/skills/review-pr"
 expect_downstream_validator_failure "$legacy_project" ".codex/skills/review-pr exists"
 
+missing_support_doc_project="$tmp_dir/missing-support-doc-project"
+mkdir -p "$missing_support_doc_project"
+(
+  cd "$missing_support_doc_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+rm -f "$missing_support_doc_project/.agents/docs/read-only-discovery.md"
+expect_downstream_validator_failure "$missing_support_doc_project" "missing .agents/docs/read-only-discovery.md"
+
 mock_bin="$tmp_dir/bin"
 install_mock_openspec "$mock_bin"
 expected_source_commit="$(git -C "$repo_root" rev-parse HEAD)"
@@ -339,6 +408,8 @@ git -C "$ensure_project" init -q
   [ -f scripts/validate-openspec-review-skills.sh ] || fail "ensure did not install validator"
   [ -f .agents/skills/README.md ] || fail "ensure did not install skills README"
   [ -f .agents/skills/UPSTREAM.md ] || fail "ensure did not install upstream metadata"
+  [ -f .agents/docs/read-only-discovery.md ] || fail "ensure did not install read-only discovery support doc"
+  [ ! -L .agents/docs/read-only-discovery.md ] || fail "ensure installed support doc as a symlink"
   grep -Fq "Source repository: https://github.com/mgarvey/openspec-review-skills" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source repository"
   grep -Fq "Source commit: $expected_source_commit" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source commit"
   grep -Fq "Source exact tag:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tag status"
@@ -351,6 +422,7 @@ legacy_metadata_project="$legacy_metadata_home/Code/legacy-metadata-project"
 mkdir -p "$legacy_metadata_project"
 git -C "$legacy_metadata_project" init -q
 write_legacy_agent_metadata "$legacy_metadata_project"
+write_legacy_support_doc "$legacy_metadata_project"
 write_legacy_validator "$legacy_metadata_project"
 (
   cd "$legacy_metadata_project"
@@ -358,10 +430,12 @@ write_legacy_validator "$legacy_metadata_project"
   grep -Fq "replace legacy managed .agents/skills/README.md" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed README"
   grep -Fq "replace legacy managed .agents/skills/UPSTREAM.md" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed UPSTREAM"
   grep -Fq "replace legacy managed scripts/validate-openspec-review-skills.sh" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed validator"
+  grep -Fq "replace legacy managed .agents/docs/read-only-discovery.md" /tmp/ensure-legacy-metadata-plan.out || fail "ensure plan did not adopt legacy managed support doc"
   HOME="$legacy_metadata_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply >/tmp/ensure-legacy-metadata-apply.out
   grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo README -->" .agents/skills/README.md || fail "ensure did not replace legacy managed README with current marker"
   grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo upstream metadata -->" .agents/skills/UPSTREAM.md || fail "ensure did not replace legacy managed UPSTREAM with current marker"
   grep -Fq "# Managed by mgarvey/openspec-review-skills. Refresh with ensure-openspec-repo." scripts/validate-openspec-review-skills.sh || fail "ensure did not replace legacy managed validator with current marker"
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: read-only discovery support doc -->" .agents/docs/read-only-discovery.md || fail "ensure did not replace legacy managed support doc with current marker"
 )
 
 unknown_readme_project="$tmp_dir/ensure-unknown-readme-project"
@@ -386,6 +460,20 @@ printf '# Project Upstream Notes\n\nLocal upstream note.\n' > "$unknown_upstream
     fail "ensure allowed unknown UPSTREAM overwrite"
   fi
   grep -Fq ".agents/skills/UPSTREAM.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-upstream.out || fail "ensure did not explain unknown UPSTREAM refusal"
+)
+
+unknown_support_home="$tmp_dir/unknown-support-home"
+unknown_support_project="$unknown_support_home/Code/unknown-support-project"
+mkdir -p "$unknown_support_project/.agents/docs"
+git -C "$unknown_support_project" init -q
+printf '# Project Read-only Notes\n\nKeep this local support note.\n' > "$unknown_support_project/.agents/docs/read-only-discovery.md"
+(
+  cd "$unknown_support_project"
+  if HOME="$unknown_support_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-unknown-support.out 2>&1; then
+    fail "ensure allowed unknown support doc overwrite"
+  fi
+  grep -Fq ".agents/docs/read-only-discovery.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-support.out || fail "ensure did not explain unknown support doc refusal"
+  grep -Fq "Keep this local support note." .agents/docs/read-only-discovery.md || fail "ensure modified unknown support doc"
 )
 
 unknown_validator_project="$tmp_dir/ensure-unknown-validator-project"
@@ -440,10 +528,12 @@ git -C "$current_marker_metadata_project" init -q
   grep -Fq "write managed .agents/skills/README.md" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker README refresh"
   grep -Fq "write managed .agents/skills/UPSTREAM.md" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker UPSTREAM refresh"
   grep -Fq "install or update scripts/validate-openspec-review-skills.sh" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker validator refresh"
+  grep -Fq "write managed .agents/docs/read-only-discovery.md" /tmp/ensure-current-marker-metadata-plan.out || fail "ensure did not plan current-marker support doc refresh"
   PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-current-marker-metadata-apply.out
   grep -Fq "# Managed OpenSpec Review Skills" .agents/skills/README.md || fail "ensure did not refresh current-marker README"
   grep -Fq "# OpenSpec Review Skills Upstream" .agents/skills/UPSTREAM.md || fail "ensure did not refresh current-marker UPSTREAM"
   grep -Fq "OpenSpec review skills validation passed" scripts/validate-openspec-review-skills.sh || fail "ensure did not refresh current-marker validator"
+  grep -Fq "# Read-only Discovery" .agents/docs/read-only-discovery.md || fail "ensure did not refresh current-marker support doc"
 )
 
 repair_project="$tmp_dir/ensure-repair-project"

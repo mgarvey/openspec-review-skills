@@ -20,11 +20,16 @@ Examples:
   ./scripts/install-skills.sh --codex-current
   ./scripts/install-skills.sh --claude --skill review-pr,review-evidence
   ./scripts/install-skills.sh --backup .agents/skills
+
+When installing to .agents/skills, this also installs the managed
+.agents/docs/read-only-discovery.md support document referenced by the skills.
 EOF
 }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source_dir="$repo_root/skills"
+source_support_doc="$repo_root/docs/read-only-discovery.md"
+managed_marker="Managed by mgarvey/openspec-review-skills"
 target_arg=""
 dry_run=0
 force=0
@@ -221,8 +226,15 @@ if [[ "$target_dir" = */.codex/skills ]]; then
   warn ".codex/skills is a legacy Codex install target; prefer .agents/skills"
 fi
 
+support_doc_enabled=0
+support_doc_path=""
 if [[ "$target_dir" = */.agents/skills ]]; then
   project_root="${target_dir%/.agents/skills}"
+  if [ "${OPEN_SPEC_REVIEW_INSTALL_SUPPORT_DOC:-1}" != "0" ]; then
+    support_doc_enabled=1
+    support_doc_path="$project_root/.agents/docs/read-only-discovery.md"
+    [ -f "$source_support_doc" ] || die "missing source support document: $source_support_doc"
+  fi
   if [ -d "$project_root/.codex/skills" ]; then
     warn "both .agents/skills and .codex/skills exist under $project_root; avoid installing both"
   fi
@@ -460,6 +472,147 @@ copy_skill() {
   cp -R "$src/." "$dst/"
 }
 
+desired_support_doc() {
+  python3 - "$source_support_doc" "$managed_marker" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+managed_marker = sys.argv[2]
+lines = source.read_text(encoding="utf-8").splitlines()
+if not lines:
+    raise SystemExit("support document is empty")
+
+print(lines[0])
+print()
+print(f"<!-- {managed_marker}: read-only discovery support doc -->")
+rest = lines[1:]
+while rest and not rest[0].strip():
+    rest = rest[1:]
+if rest:
+    print()
+    print("\n".join(rest))
+PY
+}
+
+file_matches_text() {
+  local path="$1"
+  local content="$2"
+  [ -f "$path" ] || return 1
+  local tmp
+  tmp="$(mktemp)"
+  printf '%s\n' "$content" > "$tmp"
+  if cmp -s "$path" "$tmp"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+managed_text_file() {
+  local path="$1"
+  [ -f "$path" ] && grep -Fq "$managed_marker" "$path"
+}
+
+legacy_support_doc_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lower = text.lower()
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+checks = [
+    bool(lines and lines[0] == "# Read-only Discovery"),
+    "repository-provided wrappers" in lower,
+    "local instructions" in lower,
+    "git status --short" in text,
+    "git diff" in text,
+    "AGENTS.md" in text,
+    "destructive commands" in lower,
+    "review" in lower,
+]
+project_specific = any(
+    signal in lower
+    for signal in [
+        "local project",
+        "project-specific",
+        "customer",
+        "sku",
+    ]
+)
+too_large = len(text) > 10000
+
+raise SystemExit(0 if all(checks) and not too_large and not project_specific else 1)
+PY
+}
+
+install_support_doc() {
+  [ "$support_doc_enabled" -eq 1 ] || return 0
+
+  local content support_rel backup_dst
+  content="$(desired_support_doc)"
+  support_rel=".agents/docs/read-only-discovery.md"
+
+  if file_matches_text "$support_doc_path" "$content"; then
+    echo "skip $support_rel (unchanged)"
+    skipped+=("$support_rel")
+    return 0
+  fi
+
+  if path_exists "$support_doc_path"; then
+    if [ -L "$support_doc_path" ]; then
+      if [ "$backup" -eq 1 ]; then
+        backup_dst="$backup_root/$support_rel"
+        echo "backup $support_rel -> $backup_dst"
+        backed_up+=("$support_rel -> $backup_dst")
+        if [ "$dry_run" -eq 0 ]; then
+          mkdir -p "$(dirname "$backup_dst")"
+          mv "$support_doc_path" "$backup_dst"
+        fi
+        echo "install $support_rel"
+      elif [ "$force" -eq 1 ]; then
+        warn "force replacing $support_rel symlink"
+        echo "install $support_rel (force replace symlink)"
+      else
+        die "refusing to overwrite $support_rel; existing path is a symlink"
+      fi
+    elif managed_text_file "$support_doc_path" || legacy_support_doc_file "$support_doc_path"; then
+      echo "install $support_rel (replace managed)"
+    elif [ "$backup" -eq 1 ]; then
+      backup_dst="$backup_root/$support_rel"
+      echo "backup $support_rel -> $backup_dst"
+      backed_up+=("$support_rel -> $backup_dst")
+      if [ "$dry_run" -eq 0 ]; then
+        mkdir -p "$(dirname "$backup_dst")"
+        mv "$support_doc_path" "$backup_dst"
+      fi
+      echo "install $support_rel"
+    elif [ "$force" -eq 1 ]; then
+      warn "force replacing $support_rel"
+      echo "install $support_rel (force replace existing)"
+    else
+      die "refusing to overwrite $support_rel; existing file is not managed OpenSpec review skills support content"
+    fi
+  else
+    echo "install $support_rel"
+  fi
+
+  installed+=("$support_rel")
+  if [ "$dry_run" -eq 0 ]; then
+    mkdir -p "$(dirname "$support_doc_path")"
+    if path_exists "$support_doc_path"; then
+      rm -rf "$support_doc_path"
+    fi
+    printf '%s\n' "$content" > "$support_doc_path"
+  fi
+}
+
 for name in "${selected_names[@]}"; do
   src="$source_dir/$name"
   dst="$target_dir/$name"
@@ -497,6 +650,8 @@ for name in "${selected_names[@]}"; do
     mark_managed "$name" "$name" "$(skill_checksum "$dst")"
   fi
 done
+
+install_support_doc
 
 if [ "$prune" -eq 1 ]; then
   for name in "${previous_names[@]}"; do

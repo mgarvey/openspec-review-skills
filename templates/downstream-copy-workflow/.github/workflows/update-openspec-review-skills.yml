@@ -65,3 +65,4 @@ jobs:
             Review this as a prompt/instruction supply-chain update.
           add-paths: |
             .agents/skills
+            .agents/docs/read-only-discovery.md

@@ -26,7 +26,8 @@ Options:
 The command must be run from inside the downstream Git repository. It installs
 real files under .agents/skills, initializes OpenSpec when openspec/ is missing,
 installs scripts/validate-openspec-review-skills.sh, and writes managed
-.agents/skills/README.md and .agents/skills/UPSTREAM.md.
+.agents/skills/README.md, .agents/skills/UPSTREAM.md, and
+.agents/docs/read-only-discovery.md.
 
 It never uses .codex/skills, Git submodules, startup hooks, or symlinked
 .agents/skills entries.
@@ -100,11 +101,13 @@ source_skills="$source_repo/skills"
 source_manifest="$source_repo/skills-manifest.json"
 source_installer="$source_repo/scripts/install-skills.sh"
 source_validator="$source_repo/templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh"
+source_support_doc="$source_repo/docs/read-only-discovery.md"
 
 [ -d "$source_skills" ] || die "missing source skills directory: $source_skills"
 [ -f "$source_manifest" ] || die "missing source manifest: $source_manifest"
 [ -x "$source_installer" ] || die "missing executable installer: $source_installer"
 [ -f "$source_validator" ] || die "missing downstream validator template: $source_validator"
+[ -f "$source_support_doc" ] || die "missing support document: $source_support_doc"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 
 target_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -140,6 +143,7 @@ gitmodules_path="$target_root/.gitmodules"
 openspec_dir="$target_root/openspec"
 readme_path="$skills_dir/README.md"
 upstream_path="$skills_dir/UPSTREAM.md"
+support_doc_path="$target_root/.agents/docs/read-only-discovery.md"
 source_commit="$(git -C "$source_repo" rev-parse HEAD 2>/dev/null || true)"
 source_tag="$(git -C "$source_repo" describe --tags --exact-match 2>/dev/null || true)"
 source_status="$(git -C "$source_repo" status --porcelain --untracked-files=all 2>/dev/null || true)"
@@ -249,6 +253,29 @@ skills.
 EOF
 }
 
+desired_support_doc() {
+  python3 - "$source_support_doc" "$managed_marker" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+managed_marker = sys.argv[2]
+lines = source.read_text(encoding="utf-8").splitlines()
+if not lines:
+    raise SystemExit("support document is empty")
+
+print(lines[0])
+print()
+print(f"<!-- {managed_marker}: read-only discovery support doc -->")
+rest = lines[1:]
+while rest and not rest[0].strip():
+    rest = rest[1:]
+if rest:
+    print()
+    print("\n".join(rest))
+PY
+}
+
 write_if_needed() {
   local path="$1"
   local content="$2"
@@ -307,6 +334,12 @@ has_vendored_file_model = (
 fresh_checkout_note = bool(
     re.search(r"fresh[- ](clones?|checkouts?|worktrees?)|new (git )?worktrees?", normalized)
 )
+setup_without_submodule_note = (
+    fresh_checkout_note
+    or "submodule initialization" in normalized
+    or "submodule init" in normalized
+    or "git submodule update" in normalized
+)
 too_large = len(text) > 5000
 project_specific = any(
     signal in lower
@@ -323,7 +356,7 @@ checks = [
     "mgarvey/openspec-review-skills" in text,
     ".agents/skills" in text,
     has_vendored_file_model,
-    fresh_checkout_note,
+    setup_without_submodule_note,
     "submodule" in lower,
     "symlink" in lower,
     "startup" in lower or "bootstrap" in lower or "hook" in lower,
@@ -357,17 +390,66 @@ project_specific = any(
     ]
 )
 
+has_legacy_warning_set = (
+    ".agents/vendor/openspec-review-skills" in text
+    and "submodule" in lower
+    and ".codex/skills" in text
+    and "symlink" in lower
+    and ("startup" in lower or "bootstrap" in lower or "hook" in lower)
+)
+has_support_doc_metadata = (
+    "upstream commit" in lower
+    and ("copy date" in lower or "copied" in lower)
+    and ".agents/skills" in text
+    and ".agents/docs/read-only-discovery.md" in text
+    and "../../docs/read-only-discovery.md" in text
+)
+
 checks = [
     bool(lines and lines[0] == "# OpenSpec Review Skills Upstream"),
     "mgarvey/openspec-review-skills" in text,
     bool(re.search(r"\bv[0-9]+\.[0-9]+\.[0-9]+\b", text)),
     "refresh" in lower and "openspec review skills" in lower,
-    ".agents/vendor/openspec-review-skills" in text,
-    "submodule" in lower,
-    ".codex/skills" in text,
-    "symlink" in lower,
-    "startup" in lower or "bootstrap" in lower or "hook" in lower,
+    has_legacy_warning_set or has_support_doc_metadata,
 ]
+
+raise SystemExit(0 if all(checks) and not too_large and not project_specific else 1)
+PY
+}
+
+legacy_managed_support_doc_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lower = text.lower()
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+checks = [
+    bool(lines and lines[0] == "# Read-only Discovery"),
+    "repository-provided wrappers" in lower,
+    "local instructions" in lower,
+    "git status --short" in text,
+    "git diff" in text,
+    "AGENTS.md" in text,
+    "destructive commands" in lower,
+    "review" in lower,
+]
+
+project_specific = any(
+    signal in lower
+    for signal in [
+        "local project",
+        "project-specific",
+        "customer",
+        "sku",
+    ]
+)
+too_large = len(text) > 10000
 
 raise SystemExit(0 if all(checks) and not too_large and not project_specific else 1)
 PY
@@ -381,6 +463,10 @@ legacy_managed_text_file() {
   fi
   if [ "$path" = "$upstream_path" ]; then
     legacy_managed_upstream_file "$path"
+    return
+  fi
+  if [ "$path" = "$support_doc_path" ]; then
+    legacy_managed_support_doc_file "$path"
     return
   fi
   return 1
@@ -411,6 +497,14 @@ legacy_validator_phrases = [
     "OpenSpec review skills under .agents/skills must not be symlinks",
     "OpenSpec review skills must not be duplicated in .codex/skills",
 ]
+support_doc_validator_phrases = [
+    ".agents/vendor/openspec-review-skills",
+    ".gitmodules",
+    ".agents/skills/.openspec-review-skills-manifest.json",
+    ".agents/skills/UPSTREAM.md",
+    ".agents/docs/read-only-discovery.md",
+    "symlink",
+]
 
 project_specific_signals = [
     "local project",
@@ -423,12 +517,19 @@ project_specific_signals = [
 too_large = len(text) > 20000
 project_specific = any(signal in lower for signal in project_specific_signals)
 looks_like_shell = bool(re.search(r"^#!.*\b(bash|sh)\b", text, re.MULTILINE))
-has_package_reference = "mgarvey/openspec-review-skills" in text
-has_success_message = "OpenSpec review skills validation passed" in text
+has_package_reference = (
+    "mgarvey/openspec-review-skills" in text
+    or ".agents/vendor/openspec-review-skills" in text
+)
+has_success_message = (
+    "OpenSpec review skills validation passed" in text
+    or ("openspec review skills" in lower and "validation" in lower)
+)
 has_manifest_reference = ".openspec-review-skills-manifest.json" in text
 has_known_legacy_phrases = (
     all(phrase in text for phrase in v012_validator_phrases)
     or all(phrase in text for phrase in legacy_validator_phrases)
+    or all(phrase in text for phrase in support_doc_validator_phrases)
 )
 
 raise SystemExit(
@@ -815,6 +916,10 @@ plan_managed_text_file() {
     return
   fi
   if path_exists "$path"; then
+    if [ -L "$path" ]; then
+      add_conflict "$(rel_path "$path") is a symlink; managed OpenSpec review skills metadata/support files must be real files"
+      return
+    fi
     if managed_text_file "$path"; then
       write_if_needed "$path" "$content" "$label"
       return
@@ -823,7 +928,7 @@ plan_managed_text_file() {
       write_if_needed "$path" "$content" "$legacy_label"
       return
     fi
-    add_conflict "$(rel_path "$path") exists and is not marked as managed or recognized as legacy managed OpenSpec review skills metadata; refusing to overwrite"
+    add_conflict "$(rel_path "$path") exists and is not marked as managed or recognized as legacy managed OpenSpec review skills metadata/support content; refusing to overwrite"
     return
   fi
   write_if_needed "$path" "$content" "$label"
@@ -908,13 +1013,13 @@ run_installer() {
   if [ "$mode" = "apply" ]; then
     (
       cd "$target_root"
-      "$source_installer" --codex-current
+      OPEN_SPEC_REVIEW_INSTALL_SUPPORT_DOC=0 "$source_installer" --codex-current
     )
     add_action "install/update real managed skill files under .agents/skills"
   else
     installer_output="$(
       cd "$target_root"
-      "$source_installer" --dry-run --codex-current 2>&1
+      OPEN_SPEC_REVIEW_INSTALL_SUPPORT_DOC=0 "$source_installer" --dry-run --codex-current 2>&1
     )" || {
       if [ "$legacy_symlink_count" -gt 0 ] && printf '%s\n' "$installer_output" | grep -Fq "symlink collision"; then
         add_action "install/update real managed skill files under .agents/skills"
@@ -960,6 +1065,7 @@ run_installer
 plan_validator
 plan_managed_text_file "$readme_path" "$(desired_readme)" "write managed .agents/skills/README.md" "replace legacy managed .agents/skills/README.md"
 plan_managed_text_file "$upstream_path" "$(desired_upstream)" "write managed .agents/skills/UPSTREAM.md" "replace legacy managed .agents/skills/UPSTREAM.md"
+plan_managed_text_file "$support_doc_path" "$(desired_support_doc)" "write managed .agents/docs/read-only-discovery.md" "replace legacy managed .agents/docs/read-only-discovery.md"
 
 if [ "${#conflicts[@]}" -gt 0 ]; then
   echo "OpenSpec repo bootstrap conflicts:"
