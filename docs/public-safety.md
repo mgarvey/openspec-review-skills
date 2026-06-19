@@ -37,3 +37,12 @@ Before publishing:
   private tools.
 - Run your normal secret-scanning and repository review process outside this
   package.
+
+## Validation Denylist
+
+`scripts/validate-skills.py` uses a conservative generic denylist for
+secret-looking assignments, private key blocks, common token shapes, private IP
+addresses, internal-looking hostnames, private absolute paths, and account-like
+numeric identifiers. Keep that denylist generic. Do not add private company
+names, customer names, internal hostnames, personal paths, or account-specific
+patterns to this public repository.

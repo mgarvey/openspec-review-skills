@@ -1,6 +1,6 @@
 ---
 name: review-security
-description: Read-only defensive security review of a proposal, pull request, branch, patch, or diff, focused on secrets, access control, injection, unsafe file or network behavior, dependency risk, CI exposure, and production impact.
+description: Defensive security review for proposals or code changes that touch secrets, auth, input handling, commands, files, network calls, dependencies, CI, deployment, or production boundaries.
 license: MIT
 ---
 
@@ -26,9 +26,18 @@ available context such as:
 
 OpenSpec is optional. If absent, review against other local intent and context.
 
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
+
 ## Security Review Focus
 
 Check for concrete security risk in these categories:
+
+Do not report a security category unless it is tied to a changed file, changed
+behavior, changed dependency, changed configuration, missing control, or stated
+intent that creates a concrete security, data, credential, CI, deployment, or
+production risk.
 
 - Secrets and credentials:
   - hardcoded secrets, tokens, passwords, connection strings, or API keys

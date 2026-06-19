@@ -1,0 +1,33 @@
+name: Update OpenSpec Review Skills
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone skill package
+        run: git clone --depth 1 https://github.com/mgarvey/openspec-review-skills /tmp/openspec-review-skills
+
+      - name: Install skills
+        run: /tmp/openspec-review-skills/scripts/install-skills.sh --codex-current
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: automation/update-openspec-review-skills
+          title: Update OpenSpec review skills
+          commit-message: Update OpenSpec review skills
+          body: |
+            Updates the managed OpenSpec review skills copied into `.agents/skills`.
+          add-paths: |
+            .agents/skills

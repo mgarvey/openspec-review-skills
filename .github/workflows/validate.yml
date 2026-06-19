@@ -1,0 +1,36 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate skills
+        run: python3 scripts/validate-skills.py
+
+      - name: Validate install script
+        run: bash scripts/validate-install.sh
+
+      - name: Syntax check shell scripts
+        run: |
+          bash -n scripts/install-skills.sh
+          bash -n scripts/validate-install.sh
+          bash -n templates/downstream-submodule/scripts/bootstrap-openspec-review-skills.sh
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: ShellCheck shell scripts
+        shell: bash
+        run: |
+          mapfile -t shell_scripts < <(find scripts templates -type f -name '*.sh' | sort)
+          shellcheck "${shell_scripts[@]}"

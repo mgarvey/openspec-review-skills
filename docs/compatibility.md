@@ -8,9 +8,8 @@ run in Codex, Claude Code, and other agents that follow the `SKILL.md` pattern.
 ## Codex
 
 Codex environments may expose repo-local skills through more than one directory
-name. The existing source repository for these extensions used `.codex/skills`.
-Current public Codex documentation also describes `.agents/skills` as the
-repo-scoped skill location.
+name. Current Codex project activation uses `.agents/skills`; older or existing
+projects may still load `.codex/skills`.
 
 Current Codex documentation says:
 
@@ -25,85 +24,94 @@ Current Codex documentation says:
 
 Source: <https://developers.openai.com/codex/skills>
 
-Recommended project install for current Codex surfaces:
+Preferred project install:
 
 ```bash
-./scripts/install-skills.sh .agents/skills
+./scripts/install-skills.sh --codex-current
 ```
 
-Legacy or existing Codex projects that still load `.codex/skills` can install
-there instead:
+`--codex-current` installs into `.agents/skills`. Treat `.codex/skills` as a
+legacy target:
 
 ```bash
-./scripts/install-skills.sh .codex/skills
+./scripts/install-skills.sh --codex-legacy
 ```
 
-Choose one repo-local Codex target per project. Installing the same skills into
-both `.agents/skills` and `.codex/skills` can make the skills appear twice.
+Installer aliases are resolved relative to the current working directory. Run
+the installer from the project that should receive the skills, or pass an
+explicit target path.
+
+Do not install both `.agents/skills` and `.codex/skills` in the same project
+unless you are intentionally migrating between them. The installer warns when it
+sees both paths.
+
+Codex supports symlinked skill folders, so downstream projects can keep this
+repository as a submodule and symlink `.agents/skills/<skill-name>` to
+`.agents/vendor/openspec-review-skills/skills/<skill-name>`.
 
 The `review-code` skill is installed the same way as the other skills. Its
 canonical source is `skills/review-code`; `.agents/skills/review-code` or
 `.codex/skills/review-code` is only an activation copy.
 
-Recommended personal install:
+## OpenAI Metadata
 
-```bash
-./scripts/install-skills.sh "$HOME/.agents/skills"
+Each skill includes optional Codex UI metadata at `agents/openai.yaml`.
+
+```yaml
+interface:
+  display_name: "Review PR"
+  short_description: "Focused PR, diff, branch, patch, or working-tree review"
 ```
+
+`review-code` also sets:
+
+```yaml
+policy:
+  allow_implicit_invocation: false
+```
+
+That makes `review-code` explicit-only while the focused skills remain
+available for implicit routing.
 
 ## Claude Code
 
-Current Claude Code documentation says:
-
-- Skills are directories with a required `SKILL.md`.
-- Project skills live under `.claude/skills/<skill-name>/SKILL.md`.
-- Personal skills live under `$HOME/.claude/skills/<skill-name>/SKILL.md`.
-- Claude Code skills follow the Agent Skills open standard and add optional
-  Claude-specific frontmatter fields.
-- Existing `.claude/commands` continue to work, but skills are recommended for
-  reusable instructions and supporting files.
-
-Source: <https://code.claude.com/docs/en/skills>
-
-Recommended project install:
+Project install:
 
 ```bash
-./scripts/install-skills.sh .claude/skills
+./scripts/install-skills.sh --claude
 ```
 
-The `review-code` skill is installed the same way as the other skills. Its
-canonical source is `skills/review-code`; `.claude/skills/review-code` is
-only an activation copy.
+`--claude` installs into `.claude/skills`. The skill instructions avoid
+Codex-only tool names, so the same canonical skill content can be copied into
+Claude Code projects.
 
-Recommended personal install:
+## Distribution
 
-```bash
-./scripts/install-skills.sh "$HOME/.claude/skills"
-```
+`skills/` is the canonical source for this package. Recommended downstream
+rollout options are:
 
-## Why There Is No Checked-in Activation Mirror
+- submodule + symlink + Dependabot
+- scheduled copy-update pull request
+- user-scoped local install
 
 This repository keeps `skills/` as the only canonical copy and documents
-activation targets instead of checking in mirrored copies. If your environment
-reads `.codex/skills`, install there explicitly:
+activation targets instead of checking in mirrored copies. Treat
+`.codex/skills`, `.agents/skills`, and `.claude/skills` as install targets, not
+source-of-truth directories. For Codex repo-local installs, use only one of
+`.agents/skills` or `.codex/skills` in the same project.
 
-```bash
-./scripts/install-skills.sh .codex/skills
-```
-
-Treat `.codex/skills`, `.agents/skills`, and `.claude/skills` as install
-targets, not source-of-truth directories. For Codex repo-local installs, use
-only one of `.agents/skills` or `.codex/skills` in the same project.
+Plugins may become a useful future distribution path, but they are optional and
+are not the primary repo-scoped rollout path for this package.
 
 ## Frontmatter Policy
 
-The skills include portable fields:
+Required fields:
 
 - `name`
 - `description`
-- `license`
-- `compatibility`
 
-They avoid Claude-only fields such as `allowed-tools`, `context`, and dynamic
-command injection, and avoid Codex-only metadata files. Add those in a local
-fork if your team wants tighter invocation policy or preapproved tools.
+Optional portable field:
+
+- `license`
+
+This package does not claim a required `compatibility` frontmatter field.

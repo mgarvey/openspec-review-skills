@@ -1,15 +1,25 @@
 ---
 name: review-code
-description: Run a read-only code review of a branch, pull request, patch, diff, or working tree by combining local context discovery with proposal, diff, evidence, security, and final-readiness review lenses.
+description: Explicit-only multi-lens review suite for final readiness checks across proposal, diff, evidence, security, and re-review lenses. Do not use for ordinary PR/diff/branch review; use review-pr instead.
 license: MIT
 ---
 
 # Review Code
 
-Run a read-only code review against the user's stated intent. Use this skill
-when the user asks for a code review, PR review, branch review, patch review,
-diff review, working-tree review, approval readiness check, or final review
-before merge or release.
+Run a read-only multi-lens review suite against the user's stated intent.
+Use this skill only when the user explicitly asks for the full review suite,
+an orchestrated final readiness review, multi-lens review, or `$review-code`.
+
+Do not use this skill as the default for ordinary PR, diff, branch, patch, or
+working-tree review. Use the focused skill that matches the request:
+
+- `review-pr`: default for pull request, branch, patch, diff, or working-tree
+  review.
+- `review-proposal`: default for proposal or pre-implementation review.
+- `review-evidence`: default for proof, evidence, approval-readiness, merge,
+  deployment, or release evidence review.
+- `review-security`: default for security-specific review.
+- `final-rereview`: default for fixup or re-review after prior findings.
 
 This skill is an orchestrator. Use the focused review skills as lenses when
 they match the request:
@@ -66,6 +76,10 @@ for, when present:
 
 OpenSpec is optional. If absent, continue with other available local context.
 
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
+
 ## Review Lens Selection
 
 Use the minimum set of lenses that answers the request:
@@ -79,8 +93,9 @@ Use the minimum set of lenses that answers the request:
 - Final re-review lens: use when prior findings were addressed and the task is
   to confirm fixups.
 
-For a general "review this" request over a code change, use diff, evidence, and
-security lenses by default.
+For an explicitly requested full-suite review over a code change, use diff,
+evidence, and security lenses by default. For an ordinary "review this" request
+over a code change, use `review-pr` instead of this skill.
 
 ## Review Focus
 
