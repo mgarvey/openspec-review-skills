@@ -82,6 +82,72 @@ EOF
   chmod +x "$bin_dir/openspec"
 }
 
+write_legacy_codex_manifest() {
+  local skills_root="$1"
+  local name="$2"
+  python3 - "$skills_root" "$name" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+skills_root = Path(sys.argv[1])
+name = sys.argv[2]
+skill_root = skills_root / name
+
+h = hashlib.sha256()
+for current, dirs, files in os.walk(skill_root):
+    dirs.sort()
+    files.sort()
+    current_path = Path(current)
+    for dirname in list(dirs):
+        path = current_path / dirname
+        rel = path.relative_to(skill_root).as_posix()
+        if path.is_symlink():
+            h.update(b"L\0")
+            h.update(rel.encode("utf-8"))
+            h.update(b"\0")
+            h.update(os.readlink(path).encode("utf-8"))
+            h.update(b"\0")
+            dirs.remove(dirname)
+    for filename in files:
+        path = current_path / filename
+        rel = path.relative_to(skill_root).as_posix()
+        if path.is_symlink():
+            h.update(b"L\0")
+            h.update(rel.encode("utf-8"))
+            h.update(b"\0")
+            h.update(os.readlink(path).encode("utf-8"))
+            h.update(b"\0")
+        else:
+            h.update(b"F\0")
+            h.update(rel.encode("utf-8"))
+            h.update(b"\0")
+            h.update(path.read_bytes())
+            h.update(b"\0")
+
+manifest = {
+    "schema_version": 1,
+    "package": "mgarvey/openspec-review-skills",
+    "installed_at": "2026-01-01T00:00:00Z",
+    "source_commit": "older-managed-copy",
+    "source_description": "https://github.com/mgarvey/openspec-review-skills",
+    "skills": [
+        {
+            "name": name,
+            "path": name,
+            "checksum": h.hexdigest(),
+        }
+    ],
+}
+(skills_root / ".openspec-review-skills-manifest.json").write_text(
+    json.dumps(manifest, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 target="$tmp_dir/project/.agents/skills"
 mkdir -p "$tmp_dir/project"
 
@@ -199,6 +265,51 @@ EOF
   [ ! -d .codex/skills ] || fail "ensure left empty legacy .codex/skills directory"
   ! grep -Fq "openspec-review-skills" .gitmodules || fail "ensure did not remove legacy .gitmodules section"
   bash scripts/validate-openspec-review-skills.sh >/tmp/ensure-repair-validate.out
+)
+
+uninitialized_vendor_project="$tmp_dir/ensure-uninitialized-vendor-project"
+mkdir -p "$uninitialized_vendor_project/.agents/vendor/openspec-review-skills"
+git -C "$uninitialized_vendor_project" init -q
+(
+  cd "$uninitialized_vendor_project"
+  cat > .gitmodules <<'EOF'
+[submodule ".agents/vendor/openspec-review-skills"]
+	path = .agents/vendor/openspec-review-skills
+	url = https://github.com/mgarvey/openspec-review-skills
+EOF
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-uninitialized-vendor.out
+  [ ! -e .agents/vendor/openspec-review-skills ] || fail "ensure did not remove empty uninitialized legacy vendor directory"
+  ! grep -Fq "openspec-review-skills" .gitmodules || fail "ensure did not remove uninitialized vendor .gitmodules section"
+  [ -f .agents/skills/review-pr/SKILL.md ] || fail "ensure did not install review-pr after uninitialized vendor cleanup"
+)
+
+dirty_vendor_project="$tmp_dir/ensure-dirty-vendor-project"
+mkdir -p "$dirty_vendor_project/.agents/vendor/openspec-review-skills"
+git -C "$dirty_vendor_project" init -q
+cp "$repo_root/skills-manifest.json" "$dirty_vendor_project/.agents/vendor/openspec-review-skills/skills-manifest.json"
+printf 'local vendor content\n' > "$dirty_vendor_project/.agents/vendor/openspec-review-skills/LOCAL.txt"
+(
+  cd "$dirty_vendor_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-dirty-vendor.out 2>&1; then
+    fail "ensure allowed legacy vendor cleanup with local content"
+  fi
+  grep -Fq "contains local or untracked content" /tmp/ensure-dirty-vendor.out || fail "ensure did not explain dirty vendor refusal"
+  [ -f .agents/vendor/openspec-review-skills/LOCAL.txt ] || fail "ensure removed dirty vendor local content"
+)
+
+legacy_manifest_codex_project="$tmp_dir/ensure-legacy-manifest-codex-project"
+mkdir -p "$legacy_manifest_codex_project"
+git -C "$legacy_manifest_codex_project" init -q
+(
+  cd "$legacy_manifest_codex_project"
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/dev/null
+  mkdir -p .codex/skills
+  cp -R "$repo_root/skills/review-pr" .codex/skills/review-pr
+  printf '\nolder managed copy\n' >> .codex/skills/review-pr/SKILL.md
+  write_legacy_codex_manifest "$legacy_manifest_codex_project/.codex/skills" review-pr
+  PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply --force >/tmp/ensure-legacy-manifest-codex.out
+  [ ! -e .codex/skills/review-pr ] || fail "ensure did not remove manifest-managed legacy .codex duplicate"
+  [ ! -d .codex/skills ] || fail "ensure left legacy .codex/skills after removing manifest-managed duplicate"
 )
 
 (

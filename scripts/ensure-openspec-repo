@@ -285,26 +285,120 @@ validator_is_managed() {
     && grep -Fq "vendored rollout must not use a Git submodule" "$path"
 }
 
-vendor_is_managed() {
+gitmodules_declares_legacy_vendor() {
+  [ -f "$gitmodules_path" ] || return 1
+  python3 - "$gitmodules_path" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+section = []
+
+
+def is_section(line: str) -> bool:
+    return line.lstrip().startswith("[") and line.rstrip().endswith("]")
+
+
+def section_matches(block) -> bool:
+    if not block or not block[0].lstrip().startswith("[submodule "):
+        return False
+    text = "".join(block)
+    has_path = False
+    for line in block:
+        key, sep, value = line.strip().partition("=")
+        if sep and key.strip() == "path" and value.strip() == ".agents/vendor/openspec-review-skills":
+            has_path = True
+            break
+    return has_path and "openspec-review-skills" in text
+
+
+for line in lines:
+    if is_section(line):
+        if section_matches(section):
+            raise SystemExit(0)
+        section = [line]
+    else:
+        section.append(line)
+
+raise SystemExit(0 if section_matches(section) else 1)
+PY
+}
+
+dir_is_empty() {
   local path="$1"
-  if [ -L "$path" ]; then
-    return 0
-  fi
-  [ -d "$path" ] || return 1
-  if [ -f "$path/skills-manifest.json" ] && python3 - "$path/skills-manifest.json" <<'PY' >/dev/null 2>&1
+  [ -d "$path" ] && [ -z "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)" ]
+}
+
+vendor_manifest_matches_package() {
+  local path="$1"
+  [ -f "$path/skills-manifest.json" ] || return 1
+  python3 - "$path/skills-manifest.json" <<'PY' >/dev/null 2>&1
 import json
 import sys
 from pathlib import Path
 data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 raise SystemExit(0 if data.get("package") == "mgarvey/openspec-review-skills" else 1)
 PY
-  then
+}
+
+vendor_is_git_checkout() {
+  local path="$1"
+  local top
+  top="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$top" ] || return 1
+  top="$(cd "$top" && pwd -P)"
+  [ "$top" = "$(cd "$path" && pwd -P)" ]
+}
+
+vendor_git_remote_matches() {
+  local path="$1"
+  vendor_is_git_checkout "$path" || return 1
+  git -C "$path" remote get-url origin 2>/dev/null | grep -Fq "openspec-review-skills"
+}
+
+vendor_git_tree_is_clean() {
+  local path="$1"
+  [ -z "$(git -C "$path" status --porcelain --untracked-files=all --ignored 2>/dev/null)" ]
+}
+
+vendor_is_metadata_only() {
+  local path="$1"
+  vendor_manifest_matches_package "$path" || return 1
+  [ -z "$(find "$path" -mindepth 1 -maxdepth 1 ! -name skills-manifest.json -print -quit)" ]
+}
+
+vendor_is_known_legacy() {
+  local path="$1"
+  if [ -L "$path" ]; then
     return 0
   fi
-  if git -C "$path" remote get-url origin 2>/dev/null | grep -Fq "openspec-review-skills"; then
+  [ -d "$path" ] || return 1
+  if dir_is_empty "$path" && gitmodules_declares_legacy_vendor; then
+    return 0
+  fi
+  if vendor_git_remote_matches "$path"; then
+    return 0
+  fi
+  if vendor_manifest_matches_package "$path"; then
     return 0
   fi
   return 1
+}
+
+vendor_safe_to_remove() {
+  local path="$1"
+  if [ -L "$path" ]; then
+    return 0
+  fi
+  if dir_is_empty "$path"; then
+    return 0
+  fi
+  if vendor_git_remote_matches "$path"; then
+    vendor_git_tree_is_clean "$path"
+    return
+  fi
+  vendor_is_metadata_only "$path"
 }
 
 skill_tree_matches_source() {
@@ -356,6 +450,73 @@ raise SystemExit(0 if digest(Path(sys.argv[1])) == digest(Path(sys.argv[2])) els
 PY
 }
 
+skill_tree_matches_manifest_checksum() {
+  local target_path="$1"
+  local manifest_path="$2"
+  local name="$3"
+  [ -d "$target_path" ] || return 1
+  [ ! -L "$target_path" ] || return 1
+  [ -f "$manifest_path" ] || return 1
+  python3 - "$target_path" "$manifest_path" "$name" <<'PY'
+import hashlib
+import json
+import os
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+manifest = Path(sys.argv[2])
+name = sys.argv[3]
+
+data = json.loads(manifest.read_text(encoding="utf-8"))
+if data.get("package") != "mgarvey/openspec-review-skills":
+    raise SystemExit(1)
+
+expected = None
+for skill in data.get("skills", []):
+    if isinstance(skill, dict) and skill.get("name") == name:
+        checksum = skill.get("checksum")
+        if isinstance(checksum, str) and checksum:
+            expected = checksum
+        break
+if not expected:
+    raise SystemExit(1)
+
+h = hashlib.sha256()
+for current, dirs, files in os.walk(root):
+    dirs.sort()
+    files.sort()
+    current_path = Path(current)
+    for dirname in list(dirs):
+        path = current_path / dirname
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            h.update(b"L\0")
+            h.update(rel.encode())
+            h.update(b"\0")
+            h.update(os.readlink(path).encode())
+            h.update(b"\0")
+            dirs.remove(dirname)
+    for filename in files:
+        path = current_path / filename
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            h.update(b"L\0")
+            h.update(rel.encode())
+            h.update(b"\0")
+            h.update(os.readlink(path).encode())
+            h.update(b"\0")
+        else:
+            h.update(b"F\0")
+            h.update(rel.encode())
+            h.update(b"\0")
+            h.update(path.read_bytes())
+            h.update(b"\0")
+
+raise SystemExit(0 if h.hexdigest() == expected else 1)
+PY
+}
+
 remove_legacy_gitmodules_sections() {
   [ -f "$gitmodules_path" ] || return 0
   python3 - "$gitmodules_path" "$mode" <<'PY'
@@ -375,7 +536,13 @@ def is_section(line: str) -> bool:
 def flush(block):
     global removed
     text = "".join(block)
-    if block and block[0].lstrip().startswith("[submodule ") and "openspec-review-skills" in text:
+    has_path = False
+    for line in block:
+        key, sep, value = line.strip().partition("=")
+        if sep and key.strip() == "path" and value.strip() == ".agents/vendor/openspec-review-skills":
+            has_path = True
+            break
+    if block and block[0].lstrip().startswith("[submodule ") and has_path and "openspec-review-skills" in text:
         removed = True
         return
     out.extend(block)
@@ -415,21 +582,43 @@ plan_legacy_symlinks() {
 }
 
 plan_legacy_codex_duplicates() {
-  local name legacy source_path
+  local name legacy source_path legacy_manifest
+  legacy_manifest="$target_root/.codex/skills/.openspec-review-skills-manifest.json"
   for name in "${managed_names[@]}"; do
     legacy="$target_root/.codex/skills/$name"
     source_path="$source_skills/$name"
     if path_exists "$legacy"; then
-      if skill_tree_matches_source "$source_path" "$legacy"; then
+      if skill_tree_matches_source "$source_path" "$legacy" \
+        || skill_tree_matches_manifest_checksum "$legacy" "$legacy_manifest" "$name"; then
         if [ "$mode" = "apply" ]; then
           rm -rf "$legacy"
         fi
         add_action "remove managed duplicate $(rel_path "$legacy")"
       else
-        add_conflict "$(rel_path "$legacy") exists but does not match the managed source copy; remove or back it up manually"
+        add_conflict "$(rel_path "$legacy") exists but does not match the managed source copy or its recorded managed checksum; remove or back it up manually"
       fi
     fi
   done
+}
+
+plan_legacy_codex_manifest() {
+  local legacy_manifest="$target_root/.codex/skills/.openspec-review-skills-manifest.json"
+  [ -f "$legacy_manifest" ] || return 0
+  if python3 - "$legacy_manifest" <<'PY' >/dev/null 2>&1
+import json
+import sys
+from pathlib import Path
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if data.get("package") == "mgarvey/openspec-review-skills" else 1)
+PY
+  then
+    if [ "$mode" = "apply" ]; then
+      rm -f "$legacy_manifest"
+    fi
+    add_action "remove managed legacy .codex/skills install manifest"
+  else
+    add_conflict "$(rel_path "$legacy_manifest") exists but is not a managed OpenSpec review skills manifest"
+  fi
 }
 
 plan_empty_legacy_codex_dirs() {
@@ -492,7 +681,11 @@ plan_gitmodules_cleanup() {
 
 plan_vendor_cleanup() {
   if path_exists "$legacy_vendor"; then
-    if vendor_is_managed "$legacy_vendor"; then
+    if vendor_is_known_legacy "$legacy_vendor"; then
+      if ! vendor_safe_to_remove "$legacy_vendor"; then
+        add_conflict "$(rel_path "$legacy_vendor") contains local or untracked content; remove or back it up manually"
+        return
+      fi
       if [ "$mode" = "apply" ]; then
         rm -rf "$legacy_vendor"
       fi
@@ -565,6 +758,7 @@ plan_vendor_cleanup
 plan_gitmodules_cleanup
 plan_legacy_symlinks
 plan_legacy_codex_duplicates
+plan_legacy_codex_manifest
 plan_empty_legacy_codex_dirs
 plan_openspec_init
 run_installer
