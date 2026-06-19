@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "package": "mgarvey/openspec-review-skills",
+  "skills": [
+    {
+      "name": "final-rereview",
+      "path": "skills/final-rereview",
+      "sha256": "7c23bef0f6b63e1f13e2052901c2cda775f88ab3852bfbb914d87581d2d7542f"
+    },
+    {
+      "name": "review-code",
+      "path": "skills/review-code",
+      "sha256": "7e4be0486268fc3f8e3075adf548a00316cf937685c104f1c4be57a5c760d74a"
+    },
+    {
+      "name": "review-evidence",
+      "path": "skills/review-evidence",
+      "sha256": "1d8843514c3c373bc09f5f39249b7622feffbcc2def2dfdd09c976c962b50fe9"
+    },
+    {
+      "name": "review-pr",
+      "path": "skills/review-pr",
+      "sha256": "01c0fa56fae1acdd0829cd106a97567782be6296c12d6e585aaeaf31b91a5d48"
+    },
+    {
+      "name": "review-proposal",
+      "path": "skills/review-proposal",
+      "sha256": "aafdc0afaaad090d6c57641bd32f2217c77f448e2fbb12978db1d448eaa967d6"
+    },
+    {
+      "name": "review-security",
+      "path": "skills/review-security",
+      "sha256": "31bb91cd5a9c725509ef7cdb9a54653908c06d85dffc2843a23b8a0276ccaf9c"
+    }
+  ]
+}

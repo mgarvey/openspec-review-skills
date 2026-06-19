@@ -1,0 +1,5 @@
+interface:
+  display_name: "Review Code Suite"
+  short_description: "Explicit multi-lens final readiness review"
+policy:
+  allow_implicit_invocation: false

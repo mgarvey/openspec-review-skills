@@ -1,6 +1,6 @@
 ---
 name: review-evidence
-description: Read-only review of whether a change has enough evidence for merge, deployment, release, or human approval.
+description: Review whether implemented work has enough current, tied evidence for approval, merge, deployment, or release.
 license: MIT
 ---
 
@@ -25,6 +25,10 @@ standards. Use available context such as:
 
 OpenSpec is optional. If absent, continue with other available context.
 
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
+
 ## Evidence To Check
 
 Look for proof appropriate to the change:
@@ -40,6 +44,9 @@ Look for proof appropriate to the change:
 - Rollback or undo notes where relevant.
 - Claims in the PR description or completion summary.
 - Local validation commands recommended by the repository.
+
+Do not require every possible evidence type. Require evidence proportional to
+the risk and requested decision.
 
 Tie evidence to the current branch, commit, PR head, or patch range when
 possible. Evidence that cannot be tied to the change may be useful context but

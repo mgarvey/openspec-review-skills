@@ -1,0 +1,26 @@
+# Documentation fixtures and future eval seeds.
+# The validator checks that expected and forbidden skills exist; it does not
+# attempt to fake or predict model routing.
+cases:
+  - prompt: "Review this PR for merge readiness"
+    expected_skill: review-pr
+    forbidden_skill: review-code
+
+  - prompt: "Hostile review this diff"
+    expected_skill: review-pr
+    forbidden_skill: review-code
+
+  - prompt: "Review this proposal before implementation"
+    expected_skill: review-proposal
+
+  - prompt: "Do we have enough evidence to merge?"
+    expected_skill: review-evidence
+
+  - prompt: "Security review this change"
+    expected_skill: review-security
+
+  - prompt: "I fixed the blockers; final re-review"
+    expected_skill: final-rereview
+
+  - prompt: "$review-code run the full review suite"
+    expected_skill: review-code

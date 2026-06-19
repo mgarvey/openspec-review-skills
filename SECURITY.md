@@ -19,8 +19,8 @@ Do not publish working exploit details before the issue is triaged.
 ## Expected Posture
 
 - Review skills are read-only by default.
-- OpenSpec implementation skills may edit repository files only within the
-  user-approved task scope.
+- OpenSpec review skills should stay read-only unless a downstream fork clearly
+  documents a different, user-approved task scope.
 - Destructive, production-changing, or externally mutating commands require
   explicit user approval.
 - Skills should not access, print, decode, validate, or transmit real secrets.

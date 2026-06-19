@@ -1,15 +1,19 @@
 ---
 name: review-pr
-description: Read-only hostile review of a pull request, branch, patch, or diff against its stated intent, bounded to actionable risk.
+description: Review a pull request, branch, patch, diff, or working tree against stated intent. Use for ordinary PR/diff review; not for proposal-only, evidence-only, security-only, or follow-up re-review.
 license: MIT
 ---
 
 # Review PR
 
-Review a pull request, branch, patch, or diff against its stated intent. The
-posture is hostile in the review sense: assume defects can hide in the gap
-between intent, diff, tests, and evidence. Keep the review bounded, risk-based,
-and actionable.
+Review a pull request, branch, patch, diff, or working tree against its stated
+intent. The posture is hostile in the review sense: assume defects can hide in
+the gap between intent, diff, tests, and evidence. Keep the review bounded,
+risk-based, and actionable.
+
+This is the default focused skill for ordinary PR, diff, branch, patch, and
+working-tree review. Use a more specific focused skill for proposal-only,
+evidence-only, security-only, or follow-up re-review requests.
 
 This is a review skill only. Do not implement, edit files, commit, push, merge,
 deploy, archive, run destructive commands, or broaden the requested scope.
@@ -27,6 +31,10 @@ context such as:
 
 OpenSpec is optional. If absent, review against other intent and context
 sources.
+
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
 
 ## Review Focus
 
@@ -47,6 +55,8 @@ Compare the diff against the stated intent. Explicitly check:
 
 Do not turn hostile review into noise. Prefer findings that could affect
 correctness, safety, maintainability, reviewability, or approval confidence.
+Prefer fewer, stronger findings. Do not list a checklist item as a finding
+unless the diff, intent, or evidence creates a concrete approval risk.
 
 ## Output
 

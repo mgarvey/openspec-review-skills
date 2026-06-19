@@ -1,6 +1,6 @@
 ---
 name: final-rereview
-description: Read-only narrow re-review after fixup commits, focused on prior findings, fixup deltas, final evidence, and human approval readiness.
+description: Narrow re-review after fixup commits, focused on prior findings, fixup deltas, new risks, final evidence, and human approval readiness.
 license: MIT
 ---
 
@@ -26,6 +26,10 @@ Gather:
 - OpenSpec artifacts, when present.
 
 OpenSpec is optional. If absent, continue with other local context.
+
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
 
 ## Review Focus
 
@@ -65,6 +69,19 @@ For each finding, include:
 
 Use PASS / WARN / FAIL rows in `## Evaluation` when useful. If there are no
 findings in a group, write `None.`
+
+`## Evaluation` must include this table:
+
+| Prior finding | Status | Evidence | Remaining risk |
+| --- | --- | --- | --- |
+
+Status must be one of:
+
+- resolved
+- still blocking
+- accepted non-blocking
+- superseded
+- not assessable
 
 The terminal verdict must be one of:
 

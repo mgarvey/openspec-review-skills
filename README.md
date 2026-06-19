@@ -1,6 +1,6 @@
-# OpenSpec Agent Skills
+# OpenSpec Review Skills
 
-Portable agent skills for repository review workflows developed with OpenSpec.
+Portable `SKILL.md` review skills for repository review workflows.
 
 This repository is intentionally public-safe. The skills are written for generic
 software repositories and do not contain private company names, personal
@@ -11,13 +11,14 @@ business-specific operating procedures.
 
 Review skills:
 
-- `review-code`: read-only orchestrated review of a branch, pull request,
-  patch, diff, or working tree.
-- `review-proposal`: read-only pre-implementation proposal review.
-- `review-pr`: read-only review of a pull request, branch, or diff.
-- `review-evidence`: read-only review of proof for approval, merge, or deploy.
-- `review-security`: read-only defensive security review.
+- `review-pr`: default focused skill for ordinary PR, branch, patch, diff, and
+  working-tree review.
+- `review-proposal`: pre-implementation proposal review.
+- `review-evidence`: review of proof for approval, merge, deploy, or release.
+- `review-security`: defensive security review.
 - `final-rereview`: narrow re-review after fixup commits.
+- `review-code`: explicit-only multi-lens final readiness suite. Do not use it
+  for ordinary PR/diff review; use `review-pr` instead.
 
 ## Repository Layout
 
@@ -25,58 +26,89 @@ Review skills:
 skills/
   <skill-name>/
     SKILL.md
+    agents/openai.yaml
 docs/
-  compatibility.md
-  public-safety.md
 scripts/
-  install-skills.sh
+templates/
+tests/
 ```
 
-`skills/` is the canonical source. Copy or sync those skill directories into the
-agent-specific location used by your environment.
+`skills/` is the canonical source. Do not check copied activation mirrors such
+as `.agents/skills` or `.codex/skills` into this public repository.
 
 ## Install
 
 For Codex, install into exactly one repo-local skill directory for a given
-project. Current public documentation describes `.agents/skills`; older or
-existing projects may still load `.codex/skills`. Do not install the same skills
-into both `.agents/skills` and `.codex/skills` in one project, or the skills may
-appear twice.
-
-For Claude Code, current public documentation describes project-scoped skills
-under `.claude/skills` and personal skills under `$HOME/.claude/skills`.
-
-Install all skills into a project with one target appropriate for your agent:
+project. Current Codex project activation uses `.agents/skills`:
 
 ```bash
-# Current Codex project target
-./scripts/install-skills.sh .agents/skills
-
-# Legacy Codex project target, if your environment still loads it
-./scripts/install-skills.sh .codex/skills
-
-# Claude Code project target
-./scripts/install-skills.sh .claude/skills
+./scripts/install-skills.sh --codex-current
 ```
 
-Or copy a single skill manually:
+Alias targets such as `--codex-current`, `--codex-legacy`, and `--claude` are
+resolved relative to the current working directory. Run the installer from the
+project that should receive the skills, or pass an explicit target path.
+
+`.codex/skills` is a legacy Codex target. Do not install both `.agents/skills`
+and `.codex/skills` in the same project unless you are intentionally migrating
+between them; duplicate same-named skills may appear twice.
 
 ```bash
-mkdir -p .agents/skills
-cp -R skills/review-code .agents/skills/
+./scripts/install-skills.sh --codex-legacy
 ```
+
+For Claude Code project skills:
+
+```bash
+./scripts/install-skills.sh --claude
+```
+
+Install selected skills:
+
+```bash
+./scripts/install-skills.sh --codex-current --skill review-pr,review-evidence
+```
+
+Preview changes before copying:
+
+```bash
+./scripts/install-skills.sh --dry-run --codex-current
+```
+
+## Downstream Rollout Options
+
+1. Submodule + symlink + Dependabot:
+   use `templates/downstream-submodule/` when downstream projects can keep this
+   repo as a Git submodule under `.agents/vendor/openspec-review-skills`.
+2. Scheduled copy-update PR:
+   use `templates/downstream-copy-workflow/` when downstream projects prefer
+   copied skill directories updated by a weekly PR.
+3. User-scoped local install:
+   copy selected skills into the personal skill directory used by your agent
+   surface when project-scoped rollout is not appropriate.
+
+Do not use Codex startup or resume `SessionStart` hooks to clone, fetch, copy,
+delete, overwrite, or install these skills. Do not use hooks to keep
+`.codex/skills` or `.agents/skills` silently current. Hooks may only be used for
+read-only advisory checks. Skill updates should arrive through pull requests,
+either by Dependabot submodule updates or scheduled copy-update PRs.
 
 See [docs/compatibility.md](docs/compatibility.md) for current compatibility
 notes and tradeoffs.
 
-## Requirements
+## Validation
 
-- Git and shell access for most review workflows.
-- No required network access.
-- No bundled secrets or private configuration.
+```bash
+python3 scripts/validate-skills.py
+bash scripts/validate-install.sh
+bash -n scripts/install-skills.sh
+```
 
-OpenSpec CLI is only needed for maintainers who work on this repository's
-proposal artifacts under `openspec/`.
+Regenerate release metadata after skill changes:
+
+```bash
+python3 scripts/validate-skills.py --write-manifest
+```
 
 ## Release Safety
 

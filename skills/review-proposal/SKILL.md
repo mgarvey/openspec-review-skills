@@ -1,6 +1,6 @@
 ---
 name: review-proposal
-description: Read-only review of a proposed change before implementation, using local repository context as the source of project-specific rules.
+description: Review a proposed change before implementation for scope, clarity, testability, evidence expectations, rollback expectations, and repo fit.
 license: MIT
 ---
 
@@ -24,6 +24,10 @@ for project-specific rules. Look for, when present:
 - Docs, runbooks, release notes, and repository-specific safety instructions.
 
 OpenSpec is optional. If absent, continue with other local context.
+
+When shell access is available, `../../docs/read-only-discovery.md` provides
+optional supporting discovery commands. Prefer repository-provided wrappers and
+local instructions over invented commands.
 
 ## Review Focus
 
@@ -50,7 +54,9 @@ Explicitly scan for unbounded phrases that often hide scope creep:
 - "refactor as needed"
 
 When one appears, report the exact phrase as a scope risk and ask for a bounded
-replacement or explicit non-goal.
+replacement or explicit non-goal. Recommend bounded replacement language rather
+than rewriting the proposal unless the user explicitly asks for an edited
+proposal.
 
 ## Output
 
