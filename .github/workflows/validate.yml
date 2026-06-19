@@ -19,10 +19,12 @@ jobs:
         run: bash scripts/validate-install.sh
 
       - name: Syntax check shell scripts
+        shell: bash
         run: |
-          bash -n scripts/install-skills.sh
-          bash -n scripts/validate-install.sh
-          bash -n templates/downstream-submodule/scripts/bootstrap-openspec-review-skills.sh
+          mapfile -t shell_scripts < <(find scripts templates -type f -name '*.sh' | sort)
+          for script in "${shell_scripts[@]}"; do
+            bash -n "$script"
+          done
 
       - name: Install ShellCheck
         run: |

@@ -79,7 +79,9 @@ Preview changes before copying:
 
 1. Submodule + symlink + Dependabot:
    use `templates/downstream-submodule/` when downstream projects can keep this
-   repo as a Git submodule under `.agents/vendor/openspec-review-skills`.
+   repo as a Git submodule under `.agents/vendor/openspec-review-skills`. Fresh
+   clones must initialize submodules with `git submodule update --init --recursive`;
+   the template includes a validator and CI workflow for this.
 2. Scheduled copy-update PR:
    use `templates/downstream-copy-workflow/` when downstream projects prefer
    copied skill directories updated by a weekly PR.

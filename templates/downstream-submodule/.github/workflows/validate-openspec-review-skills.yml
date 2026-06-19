@@ -1,0 +1,21 @@
+name: Validate OpenSpec Review Skills
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Validate OpenSpec review skills
+        run: bash scripts/validate-openspec-review-skills.sh
