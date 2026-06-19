@@ -94,9 +94,10 @@ vendored files.
 
 ## Repo Bootstrapper
 
-`scripts/ensure-openspec-repo` is the safe repo bootstrapper for downstream Git
-repositories. Put this repository's `scripts/` directory on your `PATH`, or run
-it by absolute path from inside the target repo:
+Starting with `v0.2.0`, `scripts/ensure-openspec-repo` is the supported safe
+repo bootstrapper for downstream Git repositories. Put this repository's
+`scripts/` directory on your `PATH`, or run it by absolute path from inside the
+target repo:
 
 ```bash
 ensure-openspec-repo --check
@@ -106,8 +107,8 @@ ensure-openspec-repo --apply
 
 The command refuses to run outside a Git worktree, and refuses to run outside
 `~/Code` unless `--force` is passed. `--apply` initializes OpenSpec when
-`openspec/` is missing, installs real files under `.agents/skills`, installs the
-downstream validator, writes managed `.agents/skills/README.md` and
+`openspec/` is missing, installs committed real files under `.agents/skills`,
+installs the downstream validator, writes managed `.agents/skills/README.md` and
 `.agents/skills/UPSTREAM.md`, removes only known managed legacy rollout paths,
 cleans the matching legacy `.gitmodules` submodule section, and then runs
 validation.

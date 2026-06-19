@@ -2,6 +2,12 @@ name: Update OpenSpec Review Skills
 
 on:
   workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Upstream branch, tag, or commit to vendor
+        required: true
+        default: main
+        type: string
   schedule:
     - cron: "17 9 * * 1"
 
@@ -16,7 +22,26 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Clone skill package
-        run: git clone --depth 1 https://github.com/mgarvey/openspec-review-skills /tmp/openspec-review-skills
+        id: upstream
+        env:
+          UPSTREAM_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.upstream_ref || 'main' }}
+        run: |
+          git init /tmp/openspec-review-skills
+          git -C /tmp/openspec-review-skills remote add origin https://github.com/mgarvey/openspec-review-skills
+          if git -C /tmp/openspec-review-skills fetch --depth 1 origin "refs/tags/$UPSTREAM_REF:refs/tags/$UPSTREAM_REF"; then
+            git -C /tmp/openspec-review-skills checkout --detach "$UPSTREAM_REF"
+          else
+            git -C /tmp/openspec-review-skills fetch --depth 1 origin "$UPSTREAM_REF"
+            git -C /tmp/openspec-review-skills checkout --detach FETCH_HEAD
+          fi
+
+          upstream_commit="$(git -C /tmp/openspec-review-skills rev-parse HEAD)"
+          upstream_tag="$(git -C /tmp/openspec-review-skills describe --tags --exact-match 2>/dev/null || true)"
+          {
+            echo "ref=$UPSTREAM_REF"
+            echo "commit=$upstream_commit"
+            echo "exact_tag=${upstream_tag:-not exactly on a tag}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Install skills
         run: /tmp/openspec-review-skills/scripts/install-skills.sh --codex-current
@@ -32,6 +57,10 @@ jobs:
           commit-message: Update OpenSpec review skills
           body: |
             Updates the managed OpenSpec review skills vendored into `.agents/skills`.
+
+            Upstream requested ref: `${{ steps.upstream.outputs.ref }}`
+            Upstream commit: `${{ steps.upstream.outputs.commit }}`
+            Upstream exact tag: `${{ steps.upstream.outputs.exact_tag }}`
 
             Review this as a prompt/instruction supply-chain update.
           add-paths: |

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.0 - 2026-06-19
+
 - Add `ensure-openspec-repo` for safe repo-local OpenSpec/Codex bootstrap and
   repair using vendored real `.agents/skills` files.
 - Refine skill routing so focused review skills handle ordinary PR, proposal,

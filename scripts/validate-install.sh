@@ -222,6 +222,7 @@ expect_downstream_validator_failure "$legacy_project" ".codex/skills/review-pr e
 
 mock_bin="$tmp_dir/bin"
 install_mock_openspec "$mock_bin"
+expected_source_commit="$(git -C "$repo_root" rev-parse HEAD)"
 
 ensure_project="$tmp_dir/ensure-project"
 mkdir -p "$ensure_project"
@@ -237,6 +238,10 @@ git -C "$ensure_project" init -q
   [ -f scripts/validate-openspec-review-skills.sh ] || fail "ensure did not install validator"
   [ -f .agents/skills/README.md ] || fail "ensure did not install skills README"
   [ -f .agents/skills/UPSTREAM.md ] || fail "ensure did not install upstream metadata"
+  grep -Fq "Source repository: https://github.com/mgarvey/openspec-review-skills" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source repository"
+  grep -Fq "Source commit: $expected_source_commit" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source commit"
+  grep -Fq "Source exact tag:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tag status"
+  grep -Fq "Source tree state:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tree state"
   "$ensure_bootstrapper" --check --force >/tmp/ensure-check.out
 )
 

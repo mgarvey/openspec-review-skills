@@ -141,6 +141,12 @@ openspec_dir="$target_root/openspec"
 readme_path="$skills_dir/README.md"
 upstream_path="$skills_dir/UPSTREAM.md"
 source_commit="$(git -C "$source_repo" rev-parse HEAD 2>/dev/null || true)"
+source_tag="$(git -C "$source_repo" describe --tags --exact-match 2>/dev/null || true)"
+source_status="$(git -C "$source_repo" status --porcelain --untracked-files=all 2>/dev/null || true)"
+source_tree_state="clean"
+if [ -n "$source_status" ]; then
+  source_tree_state="dirty; local source checkout has uncommitted changes"
+fi
 source_url="https://github.com/mgarvey/openspec-review-skills"
 
 managed_names=()
@@ -232,6 +238,8 @@ desired_upstream() {
 - Package: mgarvey/openspec-review-skills
 - Source repository: $source_url
 - Source commit: ${source_commit:-unknown}
+- Source exact tag: ${source_tag:-not exactly on a tag}
+- Source tree state: $source_tree_state
 - Target: .agents/skills
 - Refresh command: ensure-openspec-repo --apply
 
