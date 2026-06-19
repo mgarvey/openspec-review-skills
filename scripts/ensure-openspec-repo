@@ -398,14 +398,18 @@ path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
 lower = text.lower()
 
-checks = [
-    "openspec review skills" in lower,
-    ".agents/skills" in text,
-    "skill.md" in lower,
-    "manifest" in lower or ".openspec-review-skills-manifest.json" in text,
-    "symlink" in lower or "real files" in lower or "vendored" in lower,
-    ".agents/vendor/openspec-review-skills" in text,
-    ".gitmodules" in text or ".codex/skills" in text,
+v012_validator_phrases = [
+    ".agents/vendor/openspec-review-skills exists; vendored rollout must not use a Git submodule",
+    ".gitmodules references openspec-review-skills; remove the submodule and vendor real skill files instead",
+    "is a symlink; .agents/skills entries must be committed real files",
+    "missing .agents/skills/.openspec-review-skills-manifest.json; refresh vendored skills with install-skills.sh --codex-current",
+    "managed OpenSpec review skills must not be duplicated in .codex/skills",
+]
+legacy_validator_phrases = [
+    "OpenSpec review skills must use real vendored files, not .agents/vendor/openspec-review-skills",
+    "OpenSpec review skills must not use git submodules",
+    "OpenSpec review skills under .agents/skills must not be symlinks",
+    "OpenSpec review skills must not be duplicated in .codex/skills",
 ]
 
 project_specific_signals = [
@@ -419,8 +423,27 @@ project_specific_signals = [
 too_large = len(text) > 20000
 project_specific = any(signal in lower for signal in project_specific_signals)
 looks_like_shell = bool(re.search(r"^#!.*\b(bash|sh)\b", text, re.MULTILINE))
+has_package_reference = "mgarvey/openspec-review-skills" in text
+has_success_message = "OpenSpec review skills validation passed" in text
+has_manifest_reference = ".openspec-review-skills-manifest.json" in text
+has_known_legacy_phrases = (
+    all(phrase in text for phrase in v012_validator_phrases)
+    or all(phrase in text for phrase in legacy_validator_phrases)
+)
 
-raise SystemExit(0 if all(checks) and looks_like_shell and not too_large and not project_specific else 1)
+raise SystemExit(
+    0
+    if (
+        looks_like_shell
+        and has_package_reference
+        and has_success_message
+        and has_manifest_reference
+        and has_known_legacy_phrases
+        and not too_large
+        and not project_specific
+    )
+    else 1
+)
 PY
 }
 

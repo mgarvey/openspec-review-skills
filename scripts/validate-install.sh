@@ -193,6 +193,7 @@ skills_dir="$repo_root/.agents/skills"
 
 [ -d "$skills_dir" ] || fail "missing .agents/skills"
 [ -f "$skills_dir/.openspec-review-skills-manifest.json" ] || fail "missing manifest"
+grep -Fq "mgarvey/openspec-review-skills" "$skills_dir/.openspec-review-skills-manifest.json" || fail "manifest package is not mgarvey/openspec-review-skills"
 
 if [ -e "$repo_root/.agents/vendor/openspec-review-skills" ]; then
   fail "OpenSpec review skills must use real vendored files, not .agents/vendor/openspec-review-skills"
@@ -403,6 +404,29 @@ chmod +x "$unknown_validator_project/scripts/validate-openspec-review-skills.sh"
     fail "ensure allowed unknown validator overwrite"
   fi
   grep -Fq "scripts/validate-openspec-review-skills.sh exists and does not look like the managed or legacy managed OpenSpec validator" /tmp/ensure-unknown-validator.out || fail "ensure did not explain unknown validator refusal"
+)
+
+near_match_validator_project="$tmp_dir/ensure-near-match-validator-project"
+mkdir -p "$near_match_validator_project/scripts"
+git -C "$near_match_validator_project" init -q
+cat > "$near_match_validator_project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Custom validator for OpenSpec review skills. It mentions .agents/skills,
+# SKILL.md, .openspec-review-skills-manifest.json, symlink checks, real files,
+# vendored files, .agents/vendor/openspec-review-skills, .gitmodules, and
+# .codex/skills, but it is not a known managed validator from
+# mgarvey/openspec-review-skills.
+echo "custom OpenSpec review skills validation passed"
+EOF
+chmod +x "$near_match_validator_project/scripts/validate-openspec-review-skills.sh"
+(
+  cd "$near_match_validator_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-near-match-validator.out 2>&1; then
+    fail "ensure allowed near-match unknown validator overwrite"
+  fi
+  grep -Fq "scripts/validate-openspec-review-skills.sh exists and does not look like the managed or legacy managed OpenSpec validator" /tmp/ensure-near-match-validator.out || fail "ensure did not explain near-match validator refusal"
 )
 
 current_marker_metadata_project="$tmp_dir/ensure-current-marker-metadata-project"
