@@ -8,8 +8,9 @@ run in Codex, Claude Code, and other agents that follow the `SKILL.md` pattern.
 ## Codex
 
 Codex environments may expose repo-local skills through more than one directory
-name. Current Codex project activation uses `.agents/skills`; older or existing
-projects may still load `.codex/skills`.
+name. Current Codex project activation uses `.agents/skills`. Older projects may
+still contain `.codex/skills`; treat those copies as migration residue, not as a
+rollout target for this package.
 
 Current Codex documentation says:
 
@@ -30,20 +31,18 @@ Preferred project install:
 ./scripts/install-skills.sh --codex-current
 ```
 
-`--codex-current` installs into `.agents/skills`. Treat `.codex/skills` as a
-legacy target:
-
-```bash
-./scripts/install-skills.sh --codex-legacy
-```
+`--codex-current` installs into `.agents/skills`. The installer still retains a
+legacy `.codex/skills` mode for one-off local migrations of older projects, but
+downstream repositories should not use it for this package.
 
 Installer aliases are resolved relative to the current working directory. Run
 the installer from the project that should receive the skills, or pass an
 explicit target path.
 
-Do not install both `.agents/skills` and `.codex/skills` in the same project
-unless you are intentionally migrating between them. The installer warns when it
-sees both paths.
+Do not keep managed OpenSpec review skills in both `.agents/skills` and
+`.codex/skills`. When adopting the downstream rollout standard, remove duplicate
+legacy `.codex/skills` copies after the `.agents/skills` vendored files are in
+place.
 
 Downstream repositories should commit real managed skill files directly under
 `.agents/skills`. Do not use symlinked `.agents/skills` entries, Git submodules
@@ -52,8 +51,8 @@ for repo-scoped rollout. Fresh clones and new Git worktrees should discover the
 skills without extra setup commands.
 
 The `review-code` skill is installed the same way as the other skills. Its
-canonical source is `skills/review-code`; `.agents/skills/review-code` or
-`.codex/skills/review-code` is only an activation copy.
+canonical source is `skills/review-code`; `.agents/skills/review-code` is the
+repo-local activation copy for downstream Codex rollouts.
 
 ## OpenAI Metadata
 
@@ -97,10 +96,10 @@ rollout options are:
 - user-scoped local install
 
 This repository keeps `skills/` as the only canonical copy and documents
-activation targets instead of checking in mirrored copies. Treat
-`.codex/skills`, `.agents/skills`, and `.claude/skills` as install targets, not
-source-of-truth directories. For Codex repo-local installs, use only one of
-`.agents/skills` or `.codex/skills` in the same project.
+activation copy locations instead of checking in mirrored copies. Treat
+`.agents/skills` and `.claude/skills` as install targets, not source-of-truth
+directories. Historical `.codex/skills` copies are migration-only and should not
+be used for downstream OpenSpec review skill rollout.
 
 Plugins may become a useful future distribution path, but they are optional and
 are not the primary repo-scoped rollout path for this package.
