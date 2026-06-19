@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.2.1 - 2026-06-19
+
+- Teach `ensure-openspec-repo` to safely adopt legacy vendored metadata and
+  validator files from older rollouts, including `v0.1.2`, while still refusing
+  unknown user files.
+
 ## v0.2.0 - 2026-06-19
 
 - Add `ensure-openspec-repo` for safe repo-local OpenSpec/Codex bootstrap and
