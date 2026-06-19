@@ -45,9 +45,11 @@ Do not install both `.agents/skills` and `.codex/skills` in the same project
 unless you are intentionally migrating between them. The installer warns when it
 sees both paths.
 
-Codex supports symlinked skill folders, so downstream projects can keep this
-repository as a submodule and symlink `.agents/skills/<skill-name>` to
-`.agents/vendor/openspec-review-skills/skills/<skill-name>`.
+Downstream repositories should commit real managed skill files directly under
+`.agents/skills`. Do not use symlinked `.agents/skills` entries, Git submodules
+under `.agents/vendor`, `.codex/skills` duplicates, or startup/bootstrap hooks
+for repo-scoped rollout. Fresh clones and new Git worktrees should discover the
+skills without extra setup commands.
 
 The `review-code` skill is installed the same way as the other skills. Its
 canonical source is `skills/review-code`; `.agents/skills/review-code` or
@@ -90,8 +92,8 @@ Claude Code projects.
 `skills/` is the canonical source for this package. Recommended downstream
 rollout options are:
 
-- submodule + symlink + Dependabot
-- scheduled copy-update pull request
+- vendored real files in `.agents/skills`
+- scheduled copy-update pull request for refreshing the vendored files
 - user-scoped local install
 
 This repository keeps `skills/` as the only canonical copy and documents

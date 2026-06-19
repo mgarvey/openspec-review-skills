@@ -1,51 +1,21 @@
-# Downstream Submodule Rollout
+# Deprecated Downstream Submodule Rollout
 
-Use this template when a downstream project can keep
-`mgarvey/openspec-review-skills` as a Git submodule and expose the skills with
-symlinks under `.agents/skills`.
+Do not use this rollout pattern.
 
-## Files
+The OpenSpec review skills downstream standard is now vendored real files
+committed directly under `.agents/skills`. Git submodules under
+`.agents/vendor/openspec-review-skills` and symlinks under `.agents/skills` are
+retired because they break fresh clones and new Git worktrees when the submodule
+is not initialized.
 
-- `.github/dependabot.yml`: opens update PRs for the submodule.
-- `.github/workflows/validate-openspec-review-skills.yml`: validates the
-  submodule checkout and managed skill symlinks in pull requests.
-- `scripts/bootstrap-openspec-review-skills.sh`: adds the submodule and creates
-  symlinks for each skill.
-- `scripts/validate-openspec-review-skills.sh`: validates that the submodule is
-  initialized and `.agents/skills` points at the manifest-defined skills.
+Use `../downstream-copy-workflow/` instead.
 
-## Usage
+This directory intentionally no longer contains a submodule bootstrap script,
+submodule Dependabot config, or submodule/symlink validator.
 
-Copy these files into the downstream repository, then run:
+Downstream repositories should not use:
 
-```bash
-bash scripts/bootstrap-openspec-review-skills.sh
-```
-
-## Fresh Checkouts
-
-A normal clone without recursive submodules leaves
-`.agents/vendor/openspec-review-skills` uninitialized, which also leaves
-`.agents/skills/*` symlinks dangling.
-
-After cloning a downstream repository that uses this template, initialize the
-submodule before using or validating the skills:
-
-```bash
-git submodule update --init --recursive
-```
-
-Then validate the wiring:
-
-```bash
-bash scripts/validate-openspec-review-skills.sh
-```
-
-The script refuses to overwrite unrelated local skill directories unless
-`--force` is passed.
-
-Dependabot submodule pull requests update prompt and instruction content. Review
-them like code, not as routine metadata bumps.
-
-`.codex/skills` is a legacy Codex target and should not contain duplicate
-managed skills when `.agents/skills` is active.
+- Git submodules for this package.
+- Symlinked `.agents/skills` entries.
+- `.codex/skills` duplicates.
+- Startup/bootstrap hooks that install or refresh skills.

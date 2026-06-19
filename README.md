@@ -49,13 +49,10 @@ Alias targets such as `--codex-current`, `--codex-legacy`, and `--claude` are
 resolved relative to the current working directory. Run the installer from the
 project that should receive the skills, or pass an explicit target path.
 
-`.codex/skills` is a legacy Codex target. Do not install both `.agents/skills`
-and `.codex/skills` in the same project unless you are intentionally migrating
-between them; duplicate same-named skills may appear twice.
-
-```bash
-./scripts/install-skills.sh --codex-legacy
-```
+`.codex/skills` is a legacy Codex target. It is not part of the downstream
+rollout standard for this package; downstream repositories should use
+`.agents/skills` only. The installer retains `--codex-legacy` only for older
+local migrations.
 
 For Claude Code project skills:
 
@@ -77,23 +74,23 @@ Preview changes before copying:
 
 ## Downstream Rollout Options
 
-1. Submodule + symlink + Dependabot:
-   use `templates/downstream-submodule/` when downstream projects can keep this
-   repo as a Git submodule under `.agents/vendor/openspec-review-skills`. Fresh
-   clones must initialize submodules with `git submodule update --init --recursive`;
-   the template includes a validator and CI workflow for this.
-2. Scheduled copy-update PR:
-   use `templates/downstream-copy-workflow/` when downstream projects prefer
-   copied skill directories updated by a weekly PR.
-3. User-scoped local install:
+1. Vendored repo-local skill files:
+   use `templates/downstream-copy-workflow/` when downstream projects should
+   commit managed copies directly under `.agents/skills`. This is the standard
+   rollout path for repo-scoped Codex skills.
+2. User-scoped local install:
    copy selected skills into the personal skill directory used by your agent
    surface when project-scoped rollout is not appropriate.
 
+Downstream repositories should not use Git submodules, symlinks, `.codex/skills`,
+or startup/bootstrap hooks for this package. Fresh clones and new Git worktrees
+must work without `git submodule update`.
+
 Do not use Codex startup or resume `SessionStart` hooks to clone, fetch, copy,
 delete, overwrite, or install these skills. Do not use hooks to keep
-`.codex/skills` or `.agents/skills` silently current. Hooks may only be used for
-read-only advisory checks. Skill updates should arrive through pull requests,
-either by Dependabot submodule updates or scheduled copy-update PRs.
+`.agents/skills` silently current. Hooks may only be used for read-only advisory
+checks. Skill updates should arrive through pull requests that update the
+vendored files.
 
 See [docs/compatibility.md](docs/compatibility.md) for current compatibility
 notes and tradeoffs.
@@ -104,6 +101,7 @@ notes and tradeoffs.
 python3 scripts/validate-skills.py
 bash scripts/validate-install.sh
 bash -n scripts/install-skills.sh
+bash -n templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh
 ```
 
 Regenerate release metadata after skill changes:

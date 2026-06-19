@@ -21,6 +21,9 @@ jobs:
       - name: Install skills
         run: /tmp/openspec-review-skills/scripts/install-skills.sh --codex-current
 
+      - name: Validate vendored skills
+        run: bash scripts/validate-openspec-review-skills.sh
+
       - name: Open pull request
         uses: peter-evans/create-pull-request@v6
         with:
@@ -28,6 +31,8 @@ jobs:
           title: Update OpenSpec review skills
           commit-message: Update OpenSpec review skills
           body: |
-            Updates the managed OpenSpec review skills copied into `.agents/skills`.
+            Updates the managed OpenSpec review skills vendored into `.agents/skills`.
+
+            Review this as a prompt/instruction supply-chain update.
           add-paths: |
             .agents/skills

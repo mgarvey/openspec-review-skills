@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+downstream_validator_template="$repo_root/templates/downstream-copy-workflow/scripts/validate-openspec-review-skills.sh"
 
 fail() {
   echo "error: $*" >&2
@@ -30,6 +31,38 @@ raise SystemExit(f"missing manifest entry for {expected}")
 PY
 }
 
+install_downstream_validator() {
+  local project="$1"
+  mkdir -p "$project/scripts"
+  cp "$downstream_validator_template" "$project/scripts/validate-openspec-review-skills.sh"
+}
+
+run_downstream_validator() {
+  local project="$1"
+  install_downstream_validator "$project"
+  (
+    cd "$project"
+    bash scripts/validate-openspec-review-skills.sh
+  )
+}
+
+expect_downstream_validator_failure() {
+  local project="$1"
+  local expected="$2"
+  local output="$project/validator.out"
+  install_downstream_validator "$project"
+  if (
+    cd "$project"
+    bash scripts/validate-openspec-review-skills.sh
+  ) >"$output" 2>&1; then
+    fail "downstream validator unexpectedly passed for $project"
+  fi
+  if ! grep -Fq "$expected" "$output"; then
+    cat "$output" >&2
+    fail "downstream validator output did not contain: $expected"
+  fi
+}
+
 target="$tmp_dir/project/.agents/skills"
 mkdir -p "$tmp_dir/project"
 
@@ -47,6 +80,58 @@ for skill in "$repo_root"/skills/*; do
 done
 [ -f "$target/.openspec-review-skills-manifest.json" ] || fail "missing install manifest"
 assert_manifest_has "$target/.openspec-review-skills-manifest.json" "review-pr"
+run_downstream_validator "$tmp_dir/project"
+
+symlink_project="$tmp_dir/symlink-project"
+mkdir -p "$symlink_project"
+(
+  cd "$symlink_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+rm -rf "$symlink_project/.agents/skills/review-pr"
+ln -s "$repo_root/skills/review-pr" "$symlink_project/.agents/skills/review-pr"
+expect_downstream_validator_failure "$symlink_project" "is a symlink"
+
+vendor_project="$tmp_dir/vendor-project"
+mkdir -p "$vendor_project"
+(
+  cd "$vendor_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+mkdir -p "$vendor_project/.agents/vendor/openspec-review-skills"
+expect_downstream_validator_failure "$vendor_project" ".agents/vendor/openspec-review-skills exists"
+
+gitmodules_project="$tmp_dir/gitmodules-project"
+mkdir -p "$gitmodules_project"
+(
+  cd "$gitmodules_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+cat > "$gitmodules_project/.gitmodules" <<'EOF'
+[submodule ".agents/vendor/openspec-review-skills"]
+	path = .agents/vendor/openspec-review-skills
+	url = https://github.com/mgarvey/openspec-review-skills
+EOF
+expect_downstream_validator_failure "$gitmodules_project" ".gitmodules references openspec-review-skills"
+
+missing_project="$tmp_dir/missing-project"
+mkdir -p "$missing_project"
+(
+  cd "$missing_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+rm -rf "$missing_project/.agents/skills/review-pr"
+expect_downstream_validator_failure "$missing_project" "missing managed skill directory: .agents/skills/review-pr"
+
+legacy_project="$tmp_dir/legacy-project"
+mkdir -p "$legacy_project"
+(
+  cd "$legacy_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+)
+mkdir -p "$legacy_project/.codex/skills"
+cp -R "$repo_root/skills/review-pr" "$legacy_project/.codex/skills/review-pr"
+expect_downstream_validator_failure "$legacy_project" ".codex/skills/review-pr exists"
 
 (
   cd "$tmp_dir/project"
