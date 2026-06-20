@@ -498,12 +498,15 @@ legacy_validator_phrases = [
     "OpenSpec review skills must not be duplicated in .codex/skills",
 ]
 support_doc_validator_phrases = [
-    ".agents/vendor/openspec-review-skills",
-    ".gitmodules",
-    ".agents/skills/.openspec-review-skills-manifest.json",
-    ".agents/skills/UPSTREAM.md",
-    ".agents/docs/read-only-discovery.md",
-    "symlink",
+    "missing .agents/skills",
+    "missing .agents/skills/UPSTREAM.md",
+    "manifest package is not mgarvey/openspec-review-skills",
+    "missing .agents/docs/read-only-discovery.md",
+    ".agents/docs/read-only-discovery.md must not be a symlink",
+    "OpenSpec review skills must use real vendored files, not .agents/vendor/openspec-review-skills",
+    "OpenSpec review skills must not use git submodules",
+    "OpenSpec review skills under .agents/skills must not be symlinks",
+    "OpenSpec review skills must not be duplicated in .codex/skills",
 ]
 
 project_specific_signals = [
@@ -517,14 +520,8 @@ project_specific_signals = [
 too_large = len(text) > 20000
 project_specific = any(signal in lower for signal in project_specific_signals)
 looks_like_shell = bool(re.search(r"^#!.*\b(bash|sh)\b", text, re.MULTILINE))
-has_package_reference = (
-    "mgarvey/openspec-review-skills" in text
-    or ".agents/vendor/openspec-review-skills" in text
-)
-has_success_message = (
-    "OpenSpec review skills validation passed" in text
-    or ("openspec review skills" in lower and "validation" in lower)
-)
+has_package_reference = "mgarvey/openspec-review-skills" in text
+has_success_message = "OpenSpec review skills validation passed" in text
 has_manifest_reference = ".openspec-review-skills-manifest.json" in text
 has_known_legacy_phrases = (
     all(phrase in text for phrase in v012_validator_phrases)
@@ -912,12 +909,12 @@ plan_managed_text_file() {
   local content="$2"
   local label="$3"
   local legacy_label="$4"
-  if file_matches_text "$path" "$content"; then
-    return
-  fi
   if path_exists "$path"; then
     if [ -L "$path" ]; then
       add_conflict "$(rel_path "$path") is a symlink; managed OpenSpec review skills metadata/support files must be real files"
+      return
+    fi
+    if file_matches_text "$path" "$content"; then
       return
     fi
     if managed_text_file "$path"; then
@@ -929,6 +926,9 @@ plan_managed_text_file() {
       return
     fi
     add_conflict "$(rel_path "$path") exists and is not marked as managed or recognized as legacy managed OpenSpec review skills metadata/support content; refusing to overwrite"
+    return
+  fi
+  if file_matches_text "$path" "$content"; then
     return
   fi
   write_if_needed "$path" "$content" "$label"

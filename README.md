@@ -109,9 +109,10 @@ The command refuses to run outside a Git worktree, and refuses to run outside
 `~/Code` unless `--force` is passed. `--apply` initializes OpenSpec when
 `openspec/` is missing, installs committed real files under `.agents/skills`,
 installs the downstream validator, writes managed `.agents/skills/README.md` and
-`.agents/skills/UPSTREAM.md`, removes only known managed legacy rollout paths,
-cleans the matching legacy `.gitmodules` submodule section, and then runs
-validation.
+`.agents/skills/UPSTREAM.md`, installs the managed
+`.agents/docs/read-only-discovery.md` support doc, removes only known managed
+legacy rollout paths, cleans the matching legacy `.gitmodules` submodule
+section, and then runs validation.
 
 See [docs/compatibility.md](docs/compatibility.md) for current compatibility
 notes and tradeoffs.

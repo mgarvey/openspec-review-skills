@@ -559,12 +559,6 @@ install_support_doc() {
   content="$(desired_support_doc)"
   support_rel=".agents/docs/read-only-discovery.md"
 
-  if file_matches_text "$support_doc_path" "$content"; then
-    echo "skip $support_rel (unchanged)"
-    skipped+=("$support_rel")
-    return 0
-  fi
-
   if path_exists "$support_doc_path"; then
     if [ -L "$support_doc_path" ]; then
       if [ "$backup" -eq 1 ]; then
@@ -582,6 +576,10 @@ install_support_doc() {
       else
         die "refusing to overwrite $support_rel; existing path is a symlink"
       fi
+    elif file_matches_text "$support_doc_path" "$content"; then
+      echo "skip $support_rel (unchanged)"
+      skipped+=("$support_rel")
+      return 0
     elif managed_text_file "$support_doc_path" || legacy_support_doc_file "$support_doc_path"; then
       echo "install $support_rel (replace managed)"
     elif [ "$backup" -eq 1 ]; then

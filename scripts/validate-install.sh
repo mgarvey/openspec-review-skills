@@ -390,6 +390,20 @@ mkdir -p "$missing_support_doc_project"
 rm -f "$missing_support_doc_project/.agents/docs/read-only-discovery.md"
 expect_downstream_validator_failure "$missing_support_doc_project" "missing .agents/docs/read-only-discovery.md"
 
+support_doc_symlink_install_project="$tmp_dir/support-doc-symlink-install-project"
+mkdir -p "$support_doc_symlink_install_project"
+(
+  cd "$support_doc_symlink_install_project"
+  bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+  cp .agents/docs/read-only-discovery.md "$tmp_dir/support-doc-target.md"
+  rm .agents/docs/read-only-discovery.md
+  ln -s "$tmp_dir/support-doc-target.md" .agents/docs/read-only-discovery.md
+  if bash "$repo_root/scripts/install-skills.sh" --codex-current >/tmp/install-support-symlink.out 2>&1; then
+    fail "install allowed matching-content support doc symlink"
+  fi
+  grep -Fq "existing path is a symlink" /tmp/install-support-symlink.out || fail "install did not explain support doc symlink refusal"
+)
+
 mock_bin="$tmp_dir/bin"
 install_mock_openspec "$mock_bin"
 expected_source_commit="$(git -C "$repo_root" rev-parse HEAD)"
@@ -415,6 +429,22 @@ git -C "$ensure_project" init -q
   grep -Fq "Source exact tag:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tag status"
   grep -Fq "Source tree state:" .agents/skills/UPSTREAM.md || fail "ensure upstream metadata omitted source tree state"
   "$ensure_bootstrapper" --check --force >/tmp/ensure-check.out
+)
+
+ensure_support_symlink_home="$tmp_dir/ensure-support-symlink-home"
+ensure_support_symlink_project="$ensure_support_symlink_home/Code/ensure-support-symlink-project"
+mkdir -p "$ensure_support_symlink_project"
+git -C "$ensure_support_symlink_project" init -q
+(
+  cd "$ensure_support_symlink_project"
+  HOME="$ensure_support_symlink_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply >/dev/null
+  cp .agents/docs/read-only-discovery.md "$tmp_dir/ensure-support-doc-target.md"
+  rm .agents/docs/read-only-discovery.md
+  ln -s "$tmp_dir/ensure-support-doc-target.md" .agents/docs/read-only-discovery.md
+  if HOME="$ensure_support_symlink_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-support-symlink.out 2>&1; then
+    fail "ensure allowed matching-content support doc symlink"
+  fi
+  grep -Fq ".agents/docs/read-only-discovery.md is a symlink" /tmp/ensure-support-symlink.out || fail "ensure did not explain support doc symlink refusal"
 )
 
 legacy_metadata_home="$tmp_dir/legacy-home"
@@ -502,9 +532,10 @@ cat > "$near_match_validator_project/scripts/validate-openspec-review-skills.sh"
 set -euo pipefail
 
 # Custom validator for OpenSpec review skills. It mentions .agents/skills,
-# SKILL.md, .openspec-review-skills-manifest.json, symlink checks, real files,
-# vendored files, .agents/vendor/openspec-review-skills, .gitmodules, and
-# .codex/skills, but it is not a known managed validator from
+# SKILL.md, .agents/skills/.openspec-review-skills-manifest.json,
+# .agents/skills/UPSTREAM.md, .agents/docs/read-only-discovery.md, symlink
+# checks, real files, vendored files, .agents/vendor/openspec-review-skills,
+# .gitmodules, and .codex/skills, but it is not a known managed validator from
 # mgarvey/openspec-review-skills.
 echo "custom OpenSpec review skills validation passed"
 EOF
