@@ -444,14 +444,19 @@ context_signals = [
     ".agents/skills",
 ]
 support_signals = [
-    "# read-only discovery",
-    "agents.md",
-    "repository-provided wrappers",
-    "destructive commands",
+    "managed review skills",
+    "vendored from the same upstream tag",
+    "same upstream tag as the review skills",
+    "../../docs/read-only-discovery.md",
 ]
 
 if path.name == "read-only-discovery.md":
-    raise SystemExit(0 if any(signal in lower for signal in support_signals) else 1)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    has_title = bool(lines and lines[0] == "# Read-only Discovery")
+    has_anchor = any(signal in lower for signal in anchor_signals)
+    has_support_context = any(signal in lower for signal in support_signals)
+    has_skill_context = ".agents/skills" in text or "review skills" in lower
+    raise SystemExit(0 if has_title and has_anchor and has_skill_context and has_support_context else 1)
 
 has_anchor = any(signal in lower for signal in anchor_signals)
 has_context = any(signal in lower for signal in context_signals)

@@ -7,6 +7,8 @@
 - Teach `ensure-openspec-repo` to use an existing valid managed manifest as a
   trust anchor when adopting older vendored rollout metadata and validator
   files, while still rejecting unknown or project-specific files.
+- Require stronger OpenSpec review skills provenance before manifest-backed
+  adoption can replace `.agents/docs/read-only-discovery.md`.
 
 ## v0.2.2 - 2026-06-19
 

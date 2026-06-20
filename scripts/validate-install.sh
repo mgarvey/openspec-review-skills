@@ -214,8 +214,11 @@ write_manifest_backed_legacy_support_doc() {
   cat > "$project/.agents/docs/read-only-discovery.md" <<'EOF'
 # Read-only Discovery
 
-Use AGENTS.md and repository instructions before choosing review commands. Do
-not run destructive commands during review.
+This OpenSpec Review Skills support document is vendored from the same upstream
+tag as the review skills in `.agents/skills`.
+
+The managed review skills from `mgarvey/openspec-review-skills` reference
+`../../docs/read-only-discovery.md`.
 EOF
 }
 
@@ -725,6 +728,26 @@ printf '# Project Read-only Notes\n\nKeep this project-specific support note.\n'
     fail "ensure allowed valid-manifest unknown support doc overwrite"
   fi
   grep -Fq ".agents/docs/read-only-discovery.md contains unrelated/project-specific content" /tmp/ensure-valid-manifest-unknown-support.out || fail "ensure did not reject valid-manifest unknown support doc"
+)
+
+valid_manifest_generic_support_home="$tmp_dir/valid-manifest-generic-support-home"
+valid_manifest_generic_support_project="$valid_manifest_generic_support_home/Code/valid-manifest-generic-support-project"
+mkdir -p "$valid_manifest_generic_support_project/.agents/docs"
+git -C "$valid_manifest_generic_support_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_generic_support_project"
+cat > "$valid_manifest_generic_support_project/.agents/docs/read-only-discovery.md" <<'EOF'
+# Read-only Discovery
+
+Use AGENTS.md and repository-provided wrappers before choosing review commands.
+Do not run destructive commands during review.
+EOF
+(
+  cd "$valid_manifest_generic_support_project"
+  if HOME="$valid_manifest_generic_support_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-generic-support.out 2>&1; then
+    fail "ensure allowed valid-manifest generic support doc overwrite"
+  fi
+  grep -Fq ".agents/docs/read-only-discovery.md has no managed marker and no recognized legacy OpenSpec review skills content" /tmp/ensure-valid-manifest-generic-support.out || fail "ensure did not reject generic valid-manifest support doc"
+  ! grep -Fq "recognized by existing OpenSpec review skills manifest" /tmp/ensure-valid-manifest-generic-support.out || fail "ensure classified generic support doc as manifest-backed legacy managed"
 )
 
 valid_manifest_project_validator_home="$tmp_dir/valid-manifest-project-validator-home"
