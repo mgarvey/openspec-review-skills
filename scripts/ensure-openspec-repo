@@ -137,6 +137,7 @@ case "$target_root" in
 esac
 
 skills_dir="$target_root/.agents/skills"
+existing_manifest_path="$skills_dir/.openspec-review-skills-manifest.json"
 validator_path="$target_root/scripts/validate-openspec-review-skills.sh"
 legacy_vendor="$target_root/.agents/vendor/openspec-review-skills"
 gitmodules_path="$target_root/.gitmodules"
@@ -309,6 +310,155 @@ managed_text_file() {
   [ -f "$path" ] && grep -Fq "$managed_marker" "$path"
 }
 
+file_has_project_specific_signals() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  python3 - "$path" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    text = path.read_text(encoding="utf-8")
+except UnicodeDecodeError:
+    raise SystemExit(0)
+
+lower = text.lower()
+project_specific_signals = [
+    "local project",
+    "project-specific",
+    "project skill",
+    "project notes",
+    "customer",
+    "sku",
+    "mysql",
+    "bigcommerce",
+    "sellbrite",
+    "partsurfer",
+    "warehouse",
+    "pricing",
+]
+
+raise SystemExit(0 if any(signal in lower for signal in project_specific_signals) else 1)
+PY
+}
+
+existing_managed_manifest_valid() {
+  [ -f "$existing_manifest_path" ] || return 1
+  python3 - "$target_root" "$existing_manifest_path" <<'PY' >/dev/null 2>&1
+import json
+import re
+import sys
+from pathlib import Path, PurePosixPath
+
+repo_root = Path(sys.argv[1])
+manifest = Path(sys.argv[2])
+skills_dir = repo_root / ".agents" / "skills"
+
+try:
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+
+if data.get("package") != "mgarvey/openspec-review-skills":
+    raise SystemExit(1)
+
+skills = data.get("skills")
+if not isinstance(skills, list) or not skills:
+    raise SystemExit(1)
+
+if not skills_dir.is_dir() or skills_dir.is_symlink():
+    raise SystemExit(1)
+
+try:
+    for child in skills_dir.iterdir():
+        if child.is_symlink():
+            raise SystemExit(1)
+except OSError:
+    raise SystemExit(1)
+
+seen = set()
+skills_real = skills_dir.resolve(strict=True)
+for entry in skills:
+    if not isinstance(entry, dict):
+        raise SystemExit(1)
+
+    name = entry.get("name")
+    path = entry.get("path", name)
+
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        raise SystemExit(1)
+    if name in seen:
+        raise SystemExit(1)
+    seen.add(name)
+
+    if not isinstance(path, str) or not re.fullmatch(r"[A-Za-z0-9._/-]+", path):
+        raise SystemExit(1)
+    posix_path = PurePosixPath(path)
+    if posix_path.is_absolute() or ".." in posix_path.parts or "." in posix_path.parts:
+        raise SystemExit(1)
+
+    skill_dir = skills_dir / path
+    try:
+        skill_real = skill_dir.resolve(strict=True)
+        skill_real.relative_to(skills_real)
+    except Exception:
+        raise SystemExit(1)
+
+    skill_md = skill_dir / "SKILL.md"
+    if skill_dir.is_symlink() or not skill_dir.is_dir():
+        raise SystemExit(1)
+    if skill_md.is_symlink() or not skill_md.is_file():
+        raise SystemExit(1)
+
+raise SystemExit(0)
+PY
+}
+
+manifest_backed_legacy_text_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  existing_managed_manifest_valid || return 1
+  ! file_has_project_specific_signals "$path" || return 1
+  python3 - "$path" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    text = path.read_text(encoding="utf-8")
+except UnicodeDecodeError:
+    raise SystemExit(1)
+
+lower = text.lower()
+if len(text) > 20000:
+    raise SystemExit(1)
+
+anchor_signals = [
+    "openspec review skills",
+    "mgarvey/openspec-review-skills",
+    "openspec-review-skills",
+]
+context_signals = [
+    ".openspec-review-skills-manifest.json",
+    ".agents/skills",
+]
+support_signals = [
+    "# read-only discovery",
+    "agents.md",
+    "repository-provided wrappers",
+    "destructive commands",
+]
+
+if path.name == "read-only-discovery.md":
+    raise SystemExit(0 if any(signal in lower for signal in support_signals) else 1)
+
+has_anchor = any(signal in lower for signal in anchor_signals)
+has_context = any(signal in lower for signal in context_signals)
+raise SystemExit(0 if has_anchor and has_context else 1)
+PY
+}
+
 legacy_managed_readme_file() {
   local path="$1"
   [ -f "$path" ] || return 1
@@ -472,6 +622,11 @@ legacy_managed_text_file() {
   return 1
 }
 
+manifest_backed_legacy_label() {
+  local path="$1"
+  printf 'replace legacy managed %s (recognized by existing OpenSpec review skills manifest)\n' "$(rel_path "$path")"
+}
+
 legacy_managed_validator_file() {
   local path="$1"
   [ -f "$path" ] || return 1
@@ -540,6 +695,69 @@ raise SystemExit(
         and not too_large
         and not project_specific
     )
+    else 1
+)
+PY
+}
+
+manifest_backed_legacy_validator_file() {
+  local path="$1"
+  [ -f "$path" ] || return 1
+  existing_managed_manifest_valid || return 1
+  ! file_has_project_specific_signals "$path" || return 1
+  python3 - "$path" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    text = path.read_text(encoding="utf-8")
+except UnicodeDecodeError:
+    raise SystemExit(1)
+
+lower = text.lower()
+if len(text) > 30000:
+    raise SystemExit(1)
+
+looks_like_shell = bool(re.search(r"^#!.*\b(bash|sh)\b", text, re.MULTILINE))
+has_openspec_anchor = (
+    "mgarvey/openspec-review-skills" in text
+    or "openspec review skills" in lower
+    or "openspec-review-skills" in lower
+)
+has_validator_shape = (
+    ".agents/skills" in text
+    and ".openspec-review-skills-manifest.json" in text
+    and ("SKILL.md" in text or "skill.md" in lower)
+)
+safety_terms = sum(
+    1
+    for term in [
+        ".codex/skills",
+        ".agents/vendor/openspec-review-skills",
+        ".gitmodules",
+        "submodule",
+        "symlink",
+    ]
+    if term in lower
+)
+has_unrelated_logic = any(
+    term in lower
+    for term in [
+        "mysql",
+        "bigcommerce",
+        "sellbrite",
+        "customer",
+        "sku",
+        "warehouse",
+        "pricing",
+    ]
+)
+
+raise SystemExit(
+    0
+    if looks_like_shell and has_openspec_anchor and has_validator_shape and safety_terms >= 2 and not has_unrelated_logic
     else 1
 )
 PY
@@ -925,7 +1143,17 @@ plan_managed_text_file() {
       write_if_needed "$path" "$content" "$legacy_label"
       return
     fi
-    add_conflict "$(rel_path "$path") exists and is not marked as managed or recognized as legacy managed OpenSpec review skills metadata/support content; refusing to overwrite"
+    if manifest_backed_legacy_text_file "$path"; then
+      write_if_needed "$path" "$content" "$(manifest_backed_legacy_label "$path")"
+      return
+    fi
+    if file_has_project_specific_signals "$path"; then
+      add_conflict "$(rel_path "$path") contains unrelated/project-specific content; no managed marker or recognized legacy OpenSpec review skills content; refusing to overwrite"
+    elif existing_managed_manifest_valid; then
+      add_conflict "$(rel_path "$path") has no managed marker and no recognized legacy OpenSpec review skills content, and does not look like canonical OpenSpec review skills metadata/support content even though an existing manifest is valid; refusing to overwrite"
+    else
+      add_conflict "$(rel_path "$path") has no managed marker, no recognized legacy OpenSpec review skills content, and no valid existing OpenSpec review skills manifest; refusing to overwrite"
+    fi
     return
   fi
   if file_matches_text "$path" "$content"; then
@@ -935,10 +1163,14 @@ plan_managed_text_file() {
 }
 
 plan_validator() {
-  if [ -f "$validator_path" ] && cmp -s "$source_validator" "$validator_path"; then
-    return
-  fi
   if path_exists "$validator_path"; then
+    if [ -L "$validator_path" ]; then
+      add_conflict "$(rel_path "$validator_path") is a symlink; managed OpenSpec review skills validator must be a real file"
+      return
+    fi
+    if [ -f "$validator_path" ] && cmp -s "$source_validator" "$validator_path"; then
+      return
+    fi
     if validator_is_managed "$validator_path"; then
       if [ "$mode" = "apply" ]; then
         mkdir -p "$(dirname "$validator_path")"
@@ -957,7 +1189,22 @@ plan_validator() {
       add_action "replace legacy managed $(rel_path "$validator_path")"
       return
     fi
-    add_conflict "$(rel_path "$validator_path") exists and does not look like the managed or legacy managed OpenSpec validator"
+    if manifest_backed_legacy_validator_file "$validator_path"; then
+      if [ "$mode" = "apply" ]; then
+        mkdir -p "$(dirname "$validator_path")"
+        cp "$source_validator" "$validator_path"
+        chmod +x "$validator_path"
+      fi
+      add_action "$(manifest_backed_legacy_label "$validator_path")"
+      return
+    fi
+    if file_has_project_specific_signals "$validator_path"; then
+      add_conflict "$(rel_path "$validator_path") contains unrelated/project-specific logic; no managed marker or recognized legacy OpenSpec validator content; refusing to overwrite"
+    elif existing_managed_manifest_valid; then
+      add_conflict "$(rel_path "$validator_path") has no managed marker and no recognized legacy OpenSpec validator content, and does not look like canonical OpenSpec review skills validation logic even though an existing manifest is valid; refusing to overwrite"
+    else
+      add_conflict "$(rel_path "$validator_path") has no managed marker, no recognized legacy OpenSpec validator content, and no valid existing OpenSpec review skills manifest; refusing to overwrite"
+    fi
     return
   fi
   if [ "$mode" = "apply" ]; then

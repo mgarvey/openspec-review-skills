@@ -148,6 +148,14 @@ manifest = {
 PY
 }
 
+install_valid_agent_manifest_project() {
+  local project="$1"
+  (
+    cd "$project"
+    bash "$repo_root/scripts/install-skills.sh" --codex-current >/dev/null
+  )
+}
+
 write_legacy_agent_metadata() {
   local project="$1"
   mkdir -p "$project/.agents/skills"
@@ -180,6 +188,55 @@ committing the refreshed `.agents/skills` files.
 `.agents/docs/read-only-discovery.md` was also vendored from the same upstream
 tag because the review skills reference `../../docs/read-only-discovery.md`.
 EOF
+}
+
+write_manifest_backed_legacy_metadata() {
+  local project="$1"
+  mkdir -p "$project/.agents/skills"
+  cat > "$project/.agents/skills/README.md" <<'EOF'
+# OpenSpec Review Skill Files
+
+OpenSpec review skills from `mgarvey/openspec-review-skills` are committed in
+`.agents/skills` for Codex discovery.
+EOF
+  cat > "$project/.agents/skills/UPSTREAM.md" <<'EOF'
+# Review Skill Provenance
+
+This OpenSpec review skills package came from `mgarvey/openspec-review-skills`.
+The `.agents/skills/.openspec-review-skills-manifest.json` file records the
+installed skill set.
+EOF
+}
+
+write_manifest_backed_legacy_support_doc() {
+  local project="$1"
+  mkdir -p "$project/.agents/docs"
+  cat > "$project/.agents/docs/read-only-discovery.md" <<'EOF'
+# Read-only Discovery
+
+Use AGENTS.md and repository instructions before choosing review commands. Do
+not run destructive commands during review.
+EOF
+}
+
+write_manifest_backed_legacy_validator() {
+  local project="$1"
+  mkdir -p "$project/scripts"
+  cat > "$project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Legacy OpenSpec review skills validation from mgarvey/openspec-review-skills.
+manifest=".agents/skills/.openspec-review-skills-manifest.json"
+[ -d ".agents/skills" ] || exit 1
+[ -f "$manifest" ] || exit 1
+[ -f ".agents/skills/review-pr/SKILL.md" ] || exit 1
+[ ! -e ".agents/vendor/openspec-review-skills" ] || exit 1
+[ ! -f ".gitmodules" ] || ! grep -Fq "openspec-review-skills" .gitmodules
+[ ! -d ".codex/skills" ] || exit 1
+echo "legacy OpenSpec validation complete"
+EOF
+  chmod +x "$project/scripts/validate-openspec-review-skills.sh"
 }
 
 write_legacy_support_doc() {
@@ -468,6 +525,66 @@ write_legacy_validator "$legacy_metadata_project"
   grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: read-only discovery support doc -->" .agents/docs/read-only-discovery.md || fail "ensure did not replace legacy managed support doc with current marker"
 )
 
+manifest_backed_home="$tmp_dir/manifest-backed-home"
+manifest_backed_project="$manifest_backed_home/Code/manifest-backed-project"
+mkdir -p "$manifest_backed_project"
+git -C "$manifest_backed_project" init -q
+install_valid_agent_manifest_project "$manifest_backed_project"
+write_manifest_backed_legacy_metadata "$manifest_backed_project"
+write_manifest_backed_legacy_validator "$manifest_backed_project"
+write_manifest_backed_legacy_support_doc "$manifest_backed_project"
+(
+  cd "$manifest_backed_project"
+  HOME="$manifest_backed_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-manifest-backed-plan.out
+  grep -Fq "replace legacy managed .agents/skills/README.md (recognized by existing OpenSpec review skills manifest)" /tmp/ensure-manifest-backed-plan.out || fail "ensure plan did not manifest-adopt README"
+  grep -Fq "replace legacy managed .agents/skills/UPSTREAM.md (recognized by existing OpenSpec review skills manifest)" /tmp/ensure-manifest-backed-plan.out || fail "ensure plan did not manifest-adopt UPSTREAM"
+  grep -Fq "replace legacy managed scripts/validate-openspec-review-skills.sh (recognized by existing OpenSpec review skills manifest)" /tmp/ensure-manifest-backed-plan.out || fail "ensure plan did not manifest-adopt validator"
+  grep -Fq "replace legacy managed .agents/docs/read-only-discovery.md (recognized by existing OpenSpec review skills manifest)" /tmp/ensure-manifest-backed-plan.out || fail "ensure plan did not manifest-adopt support doc"
+  HOME="$manifest_backed_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --apply >/tmp/ensure-manifest-backed-apply.out
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo README -->" .agents/skills/README.md || fail "ensure did not replace manifest-backed README"
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: ensure-openspec-repo upstream metadata -->" .agents/skills/UPSTREAM.md || fail "ensure did not replace manifest-backed UPSTREAM"
+  grep -Fq "# Managed by mgarvey/openspec-review-skills. Refresh with ensure-openspec-repo." scripts/validate-openspec-review-skills.sh || fail "ensure did not replace manifest-backed validator"
+  grep -Fq "<!-- Managed by mgarvey/openspec-review-skills: read-only discovery support doc -->" .agents/docs/read-only-discovery.md || fail "ensure did not replace manifest-backed support doc"
+)
+
+invalid_manifest_home="$tmp_dir/invalid-manifest-home"
+invalid_manifest_project="$invalid_manifest_home/Code/invalid-manifest-project"
+mkdir -p "$invalid_manifest_project"
+git -C "$invalid_manifest_project" init -q
+install_valid_agent_manifest_project "$invalid_manifest_project"
+write_manifest_backed_legacy_metadata "$invalid_manifest_project"
+python3 - "$invalid_manifest_project/.agents/skills/.openspec-review-skills-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+data = json.loads(manifest.read_text(encoding="utf-8"))
+data["package"] = "example/local-package"
+manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+PY
+(
+  cd "$invalid_manifest_project"
+  if HOME="$invalid_manifest_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-invalid-manifest.out 2>&1; then
+    fail "ensure allowed manifest-backed README adoption with invalid manifest"
+  fi
+  grep -Fq "no valid existing OpenSpec review skills manifest" /tmp/ensure-invalid-manifest.out || fail "ensure did not explain invalid manifest refusal"
+)
+
+missing_manifest_project="$tmp_dir/missing-manifest-project"
+mkdir -p "$missing_manifest_project"
+git -C "$missing_manifest_project" init -q
+install_valid_agent_manifest_project "$missing_manifest_project"
+rm -f "$missing_manifest_project/.agents/skills/.openspec-review-skills-manifest.json"
+write_manifest_backed_legacy_metadata "$missing_manifest_project"
+(
+  cd "$missing_manifest_project"
+  if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-missing-manifest.out 2>&1; then
+    fail "ensure allowed broad legacy adoption without manifest"
+  fi
+  grep -Fq "no valid existing OpenSpec review skills manifest" /tmp/ensure-missing-manifest.out || fail "ensure did not explain missing manifest refusal"
+)
+
 unknown_readme_project="$tmp_dir/ensure-unknown-readme-project"
 mkdir -p "$unknown_readme_project/.agents/skills"
 git -C "$unknown_readme_project" init -q
@@ -477,7 +594,7 @@ printf '# Project Skill Notes\n\nKeep this local project note.\n' > "$unknown_re
   if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-readme.out 2>&1; then
     fail "ensure allowed unknown README overwrite"
   fi
-  grep -Fq ".agents/skills/README.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-readme.out || fail "ensure did not explain unknown README refusal"
+  grep -Fq ".agents/skills/README.md contains unrelated/project-specific content" /tmp/ensure-unknown-readme.out || fail "ensure did not explain unknown README refusal"
 )
 
 unknown_upstream_project="$tmp_dir/ensure-unknown-upstream-project"
@@ -489,7 +606,7 @@ printf '# Project Upstream Notes\n\nLocal upstream note.\n' > "$unknown_upstream
   if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-upstream.out 2>&1; then
     fail "ensure allowed unknown UPSTREAM overwrite"
   fi
-  grep -Fq ".agents/skills/UPSTREAM.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-upstream.out || fail "ensure did not explain unknown UPSTREAM refusal"
+  grep -Fq ".agents/skills/UPSTREAM.md has no managed marker" /tmp/ensure-unknown-upstream.out || fail "ensure did not explain unknown UPSTREAM refusal"
 )
 
 unknown_support_home="$tmp_dir/unknown-support-home"
@@ -502,7 +619,7 @@ printf '# Project Read-only Notes\n\nKeep this local support note.\n' > "$unknow
   if HOME="$unknown_support_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-unknown-support.out 2>&1; then
     fail "ensure allowed unknown support doc overwrite"
   fi
-  grep -Fq ".agents/docs/read-only-discovery.md exists and is not marked as managed or recognized as legacy managed" /tmp/ensure-unknown-support.out || fail "ensure did not explain unknown support doc refusal"
+  grep -Fq ".agents/docs/read-only-discovery.md has no managed marker" /tmp/ensure-unknown-support.out || fail "ensure did not explain unknown support doc refusal"
   grep -Fq "Keep this local support note." .agents/docs/read-only-discovery.md || fail "ensure modified unknown support doc"
 )
 
@@ -521,7 +638,7 @@ chmod +x "$unknown_validator_project/scripts/validate-openspec-review-skills.sh"
   if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-unknown-validator.out 2>&1; then
     fail "ensure allowed unknown validator overwrite"
   fi
-  grep -Fq "scripts/validate-openspec-review-skills.sh exists and does not look like the managed or legacy managed OpenSpec validator" /tmp/ensure-unknown-validator.out || fail "ensure did not explain unknown validator refusal"
+  grep -Fq "scripts/validate-openspec-review-skills.sh contains unrelated/project-specific logic" /tmp/ensure-unknown-validator.out || fail "ensure did not explain unknown validator refusal"
 )
 
 near_match_validator_project="$tmp_dir/ensure-near-match-validator-project"
@@ -545,7 +662,97 @@ chmod +x "$near_match_validator_project/scripts/validate-openspec-review-skills.
   if PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan --force >/tmp/ensure-near-match-validator.out 2>&1; then
     fail "ensure allowed near-match unknown validator overwrite"
   fi
-  grep -Fq "scripts/validate-openspec-review-skills.sh exists and does not look like the managed or legacy managed OpenSpec validator" /tmp/ensure-near-match-validator.out || fail "ensure did not explain near-match validator refusal"
+  grep -Fq "scripts/validate-openspec-review-skills.sh has no managed marker" /tmp/ensure-near-match-validator.out || fail "ensure did not explain near-match validator refusal"
+)
+
+valid_manifest_unknown_readme_home="$tmp_dir/valid-manifest-unknown-readme-home"
+valid_manifest_unknown_readme_project="$valid_manifest_unknown_readme_home/Code/valid-manifest-unknown-readme-project"
+mkdir -p "$valid_manifest_unknown_readme_project"
+git -C "$valid_manifest_unknown_readme_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_unknown_readme_project"
+printf '# Project Skill Notes\n\nKeep this local project note.\n' > "$valid_manifest_unknown_readme_project/.agents/skills/README.md"
+(
+  cd "$valid_manifest_unknown_readme_project"
+  if HOME="$valid_manifest_unknown_readme_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-unknown-readme.out 2>&1; then
+    fail "ensure allowed valid-manifest unknown README overwrite"
+  fi
+  grep -Fq ".agents/skills/README.md contains unrelated/project-specific content" /tmp/ensure-valid-manifest-unknown-readme.out || fail "ensure did not reject valid-manifest unknown README"
+)
+
+valid_manifest_unknown_upstream_home="$tmp_dir/valid-manifest-unknown-upstream-home"
+valid_manifest_unknown_upstream_project="$valid_manifest_unknown_upstream_home/Code/valid-manifest-unknown-upstream-project"
+mkdir -p "$valid_manifest_unknown_upstream_project"
+git -C "$valid_manifest_unknown_upstream_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_unknown_upstream_project"
+printf '# Project Upstream Notes\n\nKeep this project-specific upstream note.\n' > "$valid_manifest_unknown_upstream_project/.agents/skills/UPSTREAM.md"
+(
+  cd "$valid_manifest_unknown_upstream_project"
+  if HOME="$valid_manifest_unknown_upstream_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-unknown-upstream.out 2>&1; then
+    fail "ensure allowed valid-manifest unknown UPSTREAM overwrite"
+  fi
+  grep -Fq ".agents/skills/UPSTREAM.md contains unrelated/project-specific content" /tmp/ensure-valid-manifest-unknown-upstream.out || fail "ensure did not reject valid-manifest unknown UPSTREAM"
+)
+
+valid_manifest_unknown_validator_home="$tmp_dir/valid-manifest-unknown-validator-home"
+valid_manifest_unknown_validator_project="$valid_manifest_unknown_validator_home/Code/valid-manifest-unknown-validator-project"
+mkdir -p "$valid_manifest_unknown_validator_project/scripts"
+git -C "$valid_manifest_unknown_validator_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_unknown_validator_project"
+cat > "$valid_manifest_unknown_validator_project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "local validator"
+EOF
+chmod +x "$valid_manifest_unknown_validator_project/scripts/validate-openspec-review-skills.sh"
+(
+  cd "$valid_manifest_unknown_validator_project"
+  if HOME="$valid_manifest_unknown_validator_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-unknown-validator.out 2>&1; then
+    fail "ensure allowed valid-manifest unknown validator overwrite"
+  fi
+  grep -Fq "scripts/validate-openspec-review-skills.sh has no managed marker" /tmp/ensure-valid-manifest-unknown-validator.out || fail "ensure did not reject valid-manifest unknown validator"
+)
+
+valid_manifest_unknown_support_home="$tmp_dir/valid-manifest-unknown-support-home"
+valid_manifest_unknown_support_project="$valid_manifest_unknown_support_home/Code/valid-manifest-unknown-support-project"
+mkdir -p "$valid_manifest_unknown_support_project/.agents/docs"
+git -C "$valid_manifest_unknown_support_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_unknown_support_project"
+printf '# Project Read-only Notes\n\nKeep this project-specific support note.\n' > "$valid_manifest_unknown_support_project/.agents/docs/read-only-discovery.md"
+(
+  cd "$valid_manifest_unknown_support_project"
+  if HOME="$valid_manifest_unknown_support_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-unknown-support.out 2>&1; then
+    fail "ensure allowed valid-manifest unknown support doc overwrite"
+  fi
+  grep -Fq ".agents/docs/read-only-discovery.md contains unrelated/project-specific content" /tmp/ensure-valid-manifest-unknown-support.out || fail "ensure did not reject valid-manifest unknown support doc"
+)
+
+valid_manifest_project_validator_home="$tmp_dir/valid-manifest-project-validator-home"
+valid_manifest_project_validator_project="$valid_manifest_project_validator_home/Code/valid-manifest-project-validator-project"
+mkdir -p "$valid_manifest_project_validator_project/scripts"
+git -C "$valid_manifest_project_validator_project" init -q
+install_valid_agent_manifest_project "$valid_manifest_project_validator_project"
+cat > "$valid_manifest_project_validator_project/scripts/validate-openspec-review-skills.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# OpenSpec review skills validator with unrelated project-specific logic.
+manifest=".agents/skills/.openspec-review-skills-manifest.json"
+[ -d ".agents/skills" ] || exit 1
+[ -f "$manifest" ] || exit 1
+[ -f ".agents/skills/review-pr/SKILL.md" ] || exit 1
+[ ! -e ".agents/vendor/openspec-review-skills" ] || exit 1
+[ ! -d ".codex/skills" ] || exit 1
+mysql --version >/dev/null 2>&1 || true
+echo "legacy OpenSpec validation complete"
+EOF
+chmod +x "$valid_manifest_project_validator_project/scripts/validate-openspec-review-skills.sh"
+(
+  cd "$valid_manifest_project_validator_project"
+  if HOME="$valid_manifest_project_validator_home" PATH="$mock_bin:$PATH" "$ensure_bootstrapper" --print-plan >/tmp/ensure-valid-manifest-project-validator.out 2>&1; then
+    fail "ensure allowed project-specific validator overwrite"
+  fi
+  grep -Fq "scripts/validate-openspec-review-skills.sh contains unrelated/project-specific logic" /tmp/ensure-valid-manifest-project-validator.out || fail "ensure did not reject project-specific validator"
 )
 
 current_marker_metadata_project="$tmp_dir/ensure-current-marker-metadata-project"
