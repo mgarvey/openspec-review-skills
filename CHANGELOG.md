@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.2.2 - 2026-06-19
+
+- Teach `ensure-openspec-repo` to recognize additional legacy vendored
+  metadata, validator, and read-only discovery support-doc formats from older
+  downstream rollouts while still refusing unknown user files.
+
 ## v0.2.1 - 2026-06-19
 
 - Teach `ensure-openspec-repo` to safely adopt legacy vendored metadata and

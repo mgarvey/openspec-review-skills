@@ -18,6 +18,7 @@ skills_dir="$repo_root/.agents/skills"
 manifest="$skills_dir/.openspec-review-skills-manifest.json"
 legacy_dir="$repo_root/.codex/skills"
 vendor_dir="$repo_root/.agents/vendor/openspec-review-skills"
+support_doc="$repo_root/.agents/docs/read-only-discovery.md"
 
 [ -d "$skills_dir" ] || fail "missing .agents/skills directory"
 
@@ -37,6 +38,19 @@ fi
 
 if [ ! -f "$manifest" ]; then
   fail "missing .agents/skills/.openspec-review-skills-manifest.json; refresh vendored skills with install-skills.sh --codex-current"
+fi
+
+if [ -L "$support_doc" ]; then
+  fail ".agents/docs/read-only-discovery.md is a symlink; managed support docs must be real files"
+fi
+if [ ! -f "$support_doc" ]; then
+  fail "missing .agents/docs/read-only-discovery.md; refresh vendored skills with install-skills.sh --codex-current"
+fi
+if ! grep -Fq "Managed by mgarvey/openspec-review-skills" "$support_doc"; then
+  fail ".agents/docs/read-only-discovery.md is not marked as managed OpenSpec review skills support content"
+fi
+if ! grep -Fq "# Read-only Discovery" "$support_doc"; then
+  fail ".agents/docs/read-only-discovery.md does not look like the read-only discovery support document"
 fi
 
 if command -v python3 >/dev/null 2>&1; then

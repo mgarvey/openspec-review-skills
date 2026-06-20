@@ -11,11 +11,13 @@ startup/bootstrap hooks for OpenSpec review skill distribution.
 
 - `.github/workflows/update-openspec-review-skills.yml`: weekly and manual
   workflow that clones this repository, installs the managed skills into
-  `.agents/skills`, and opens a pull request if files changed.
+  `.agents/skills`, refreshes the managed `.agents/docs/read-only-discovery.md`
+  support doc, and opens a pull request if files changed.
 - `.github/workflows/validate-openspec-review-skills.yml`: validates the
   committed `.agents/skills` copies in pull requests and manual runs.
-- `scripts/validate-openspec-review-skills.sh`: checks that managed skills are
-  real files, not symlinks or submodule-backed entries.
+- `scripts/validate-openspec-review-skills.sh`: checks that managed skills and
+  the read-only discovery support doc are real files, not symlinks or
+  submodule-backed entries.
 
 The workflow does not run `--prune`, so unrelated local skills are not touched.
 
@@ -38,9 +40,10 @@ git clone --depth 1 https://github.com/mgarvey/openspec-review-skills "$tmp_dir/
 bash scripts/validate-openspec-review-skills.sh
 ```
 
-Commit the resulting `.agents/skills` files, the validator script, and the
-workflow files. Do not add a Git submodule and do not commit symlinks under
-`.agents/skills`.
+Commit the resulting `.agents/skills` files,
+`.agents/docs/read-only-discovery.md`, the validator script, and the workflow
+files. Do not add a Git submodule and do not commit symlinks under
+`.agents/skills` or `.agents/docs`.
 
 ## Refreshing Vendored Skills
 
@@ -55,7 +58,7 @@ tmp_dir="$(mktemp -d)"
 git clone --depth 1 https://github.com/mgarvey/openspec-review-skills "$tmp_dir/openspec-review-skills"
 "$tmp_dir/openspec-review-skills/scripts/install-skills.sh" --codex-current
 bash scripts/validate-openspec-review-skills.sh
-git add .agents/skills
+git add .agents/skills .agents/docs/read-only-discovery.md
 ```
 
 Review refresh pull requests as prompt/instruction supply-chain updates, the
