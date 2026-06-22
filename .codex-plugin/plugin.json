@@ -1,0 +1,38 @@
+{
+  "name": "openspec-review-skills",
+  "version": "0.2.4",
+  "description": "Portable OpenSpec review skills for Codex repository review workflows.",
+  "author": {
+    "name": "OpenSpec Review Skills",
+    "email": "opensource@example.invalid",
+    "url": "https://github.com/mgarvey/openspec-review-skills"
+  },
+  "homepage": "https://github.com/mgarvey/openspec-review-skills#readme",
+  "repository": "https://github.com/mgarvey/openspec-review-skills",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "skills",
+    "openspec",
+    "review",
+    "pull-request",
+    "security"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenSpec Review Skills",
+    "shortDescription": "Reusable review skills for Codex.",
+    "longDescription": "Six focused Codex skills for proposal, pull request, evidence, security, and final re-review workflows.",
+    "developerName": "OpenSpec Review Skills",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills"
+    ],
+    "defaultPrompt": [
+      "Review this PR with review-pr.",
+      "Review this proposal.",
+      "Check whether this change is proven."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

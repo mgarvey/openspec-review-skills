@@ -15,6 +15,12 @@ jobs:
       - name: Validate skills
         run: python3 scripts/validate-skills.py
 
+      - name: Validate plugin manifest
+        run: python3 scripts/validate-plugin.py
+
+      - name: Validate marketplace catalog JSON
+        run: python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
+
       - name: Validate install script
         run: bash scripts/validate-install.sh
 

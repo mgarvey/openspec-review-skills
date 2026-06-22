@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add Codex plugin metadata so the six review skills can be installed as one
+  reusable plugin instead of being copied into each repository.
+
 ## v0.2.3 - 2026-06-20
 
 - Teach `ensure-openspec-repo` to use an existing valid managed manifest as a
