@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.4 - 2026-06-22
+
 - Add Codex plugin metadata so the six review skills can be installed as one
   reusable plugin instead of being copied into each repository.
 
