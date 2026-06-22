@@ -1,0 +1,20 @@
+{
+  "name": "openspec-review-skills",
+  "interface": {
+    "displayName": "OpenSpec Review Skills"
+  },
+  "plugins": [
+    {
+      "name": "openspec-review-skills",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
